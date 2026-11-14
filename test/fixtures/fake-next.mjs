@@ -5,12 +5,14 @@ import { randomInt } from 'node:crypto'
 import { WebSocketServer } from 'ws'
 
 const argv = process.argv.slice(2)
-const opt = (name, fallback) => {
-  const i = argv.indexOf(name)
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback
+// last occurrence wins, like next dev; accepts the short aliases too
+const opt = (names, fallback) => {
+  let v = fallback
+  for (let i = 0; i < argv.length; i++) if (names.includes(argv[i]) && argv[i + 1]) v = argv[i + 1]
+  return v
 }
-const port = Number(opt('--port', process.env.PORT ?? '3000'))
-const hostname = opt('--hostname', '127.0.0.1')
+const port = Number(opt(['--port', '-p'], process.env.PORT ?? '3000'))
+const hostname = opt(['--hostname', '-H'], '127.0.0.1')
 
 const delay = Number(process.env.FAKE_NEXT_START_DELAY_MS ?? 0)
 if (delay > 0) await new Promise((r) => setTimeout(r, delay))
