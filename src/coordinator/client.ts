@@ -21,7 +21,7 @@ const RETRY_EVERY_MS = 100
 const RECONNECT_EVERY_MS = 5_000
 const ASK_TIMEOUT_MS = 2_000
 
-// In the bundle this module lives inside dist/cli.js itself.
+// In the bundle this module lives inside dist/cli.cjs itself.
 const CLI_PATH = fileURLToPath(import.meta.url)
 
 // one start attempt per gate process; later retries only connect

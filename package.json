@@ -5,7 +5,7 @@
   "description": "Holds a Next.js app's dev port and runs the real next dev only while pages are requested.",
   "type": "module",
   "bin": {
-    "napdev": "dist/cli.js"
+    "napdev": "dist/cli.cjs"
   },
   "engines": {
     "node": ">=20"

@@ -1,4 +1,4 @@
-// Spawns the built CLI (dist/cli.js); test/global-setup.ts runs `pnpm build` first.
+// Spawns the built CLI (dist/cli.cjs); test/global-setup.ts runs `pnpm build` first.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findHiddenPort, isPortFree } from '../src/port.js'
 
-const CLI = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
+const CLI = fileURLToPath(new URL('../dist/cli.cjs', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.url))
 
 // A uniquely named link to the fixture: pgrep finds only this file's processes,
@@ -137,6 +137,15 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     expect(await exitCode(cli)).toBe(0)
     expect(pgrep(FAKE)).toEqual([])
     expect(await isPortFree(port, null)).toBe(true)
+  })
+
+  // the spec's goal 1: an ESM bundle and an eager `ws` load put it at ~72 MB on macOS
+  it('a sleeping gate stays under 60 MB RSS', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port)])
+    await waitForLine(cli, /napdev listening/)
+    await new Promise((r) => setTimeout(r, 2_000))
+    const kb = Number(execFileSync('ps', ['-o', 'rss=', '-p', String(cli.proc.pid)], { encoding: 'utf8' }).trim())
+    expect(kb * 1024).toBeLessThan(60 * 1024 ** 2)
   })
 
   it('SIGINT while asleep exits 0', async () => {

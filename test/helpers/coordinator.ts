@@ -1,4 +1,4 @@
-// Shared harness for tests that run the built CLI (dist/cli.js) and its real coordinator daemon.
+// Shared harness for tests that run the built CLI (dist/cli.cjs) and its real coordinator daemon.
 // Importing it registers per-test cleanup hooks; test/global-setup.ts builds first.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -11,7 +11,7 @@ import { askCoordinator } from '../../src/coordinator/client.js'
 import { type AppView } from '../../src/coordinator/protocol.js'
 import { findHiddenPort } from '../../src/port.js'
 
-export const CLI = fileURLToPath(new URL('../../dist/cli.js', import.meta.url))
+export const CLI = fileURLToPath(new URL('../../dist/cli.cjs', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../fixtures/fake-next.mjs', import.meta.url))
 
 // Unix socket paths are capped near 104 bytes, so the homes live under a short directory.
