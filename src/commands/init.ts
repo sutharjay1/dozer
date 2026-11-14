@@ -6,6 +6,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface InitChange { file: string; before: string; after: string }
+/** A script left as it is because napdev cannot gate it yet. */
+export interface InitSkip { file: string; script: string; reason: string }
 
 const SKIP = new Set(['node_modules', '.git', '.next', 'dist'])
 
@@ -113,47 +115,57 @@ function skipBack(t: string, i: number): number {
 
 interface Pkg { scripts?: Record<string, unknown>; dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown> }
 
-function editPackage(text: string, version: string): string | null {
+// the gate speaks plain HTTP to Next; a TLS dev server cannot sit behind it yet
+const HTTPS_FLAG = '--experimental-https'
+
+interface Edit { after: string | null; skipped: string[] }
+
+function editPackage(text: string, version: string): Edit {
+  const none: Edit = { after: null, skipped: [] }
   let pkg: Pkg
   try {
     pkg = JSON.parse(text) as Pkg
   } catch {
-    return null
+    return none
   }
-  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return null
-  if (!(pkg.dependencies && 'next' in pkg.dependencies) && !(pkg.devDependencies && 'next' in pkg.devDependencies)) return null
+  if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return none
+  if (!(pkg.dependencies && 'next' in pkg.dependencies) && !(pkg.devDependencies && 'next' in pkg.devDependencies)) return none
   const rootStart = skipWs(text, 0)
   const top = scanObject(text, rootStart)
   const scripts = top.find((e) => e.key === 'scripts')
-  if (!scripts || text[scripts.valStart] !== '{') return null
+  if (!scripts || text[scripts.valStart] !== '{') return none
 
   // rewrite script string literals right to left so earlier offsets stay valid
   let out = text
   let changed = false
+  const skipped: string[] = []
   for (const e of scanObject(text, scripts.valStart).reverse()) {
     if (text[e.valStart] !== '"') continue
     const raw = text.slice(e.valStart, e.valEnd)
     const next = `"${rewriteScript(raw.slice(1, -1))}"`
-    if (next !== raw) {
-      out = out.slice(0, e.valStart) + next + out.slice(e.valEnd)
-      changed = true
+    if (next === raw) continue
+    if (raw.includes(HTTPS_FLAG)) {
+      skipped.unshift(e.key)
+      continue
     }
+    out = out.slice(0, e.valStart) + next + out.slice(e.valEnd)
+    changed = true
   }
-  if (!changed) return null
+  if (!changed) return { after: null, skipped }
 
   const hasNapdev = (pkg.dependencies && 'napdev' in pkg.dependencies) || (pkg.devDependencies && 'napdev' in pkg.devDependencies)
-  if (hasNapdev) return out
+  if (hasNapdev) return { after: out, skipped }
   const lay = layoutOf(text)
   const value = JSON.stringify(`^${version}`)
   const rootStartOut = skipWs(out, 0)
   const dev = scanObject(out, rootStartOut).find((e) => e.key === 'devDependencies')
-  if (dev && out[dev.valStart] === '{') return insertEntry(out, dev.valStart, 'napdev', value, 1, lay)
+  if (dev && out[dev.valStart] === '{') return { after: insertEntry(out, dev.valStart, 'napdev', value, 1, lay), skipped }
   const last = top[top.length - 1]!
   const ws = leadingWs(text, last.keyStart)
   const block = `${JSON.stringify('devDependencies')}: {${lay.nl}${ws}${lay.unit}${JSON.stringify('napdev')}: ${value}${lay.nl}${ws}}`
   const lastOut = scanObject(out, rootStartOut).at(-1)!
   const wsOut = text.slice(skipBack(text, last.keyStart), last.keyStart)
-  return out.slice(0, lastOut.valEnd) + `,${wsOut}${block}` + out.slice(lastOut.valEnd)
+  return { after: out.slice(0, lastOut.valEnd) + `,${wsOut}${block}` + out.slice(lastOut.valEnd), skipped }
 }
 
 // ---- workspace discovery -------------------------------------------------------------------------
@@ -263,7 +275,12 @@ async function workspaceDirs(root: string): Promise<string[]> {
 }
 
 export async function planInit(rootDir: string, napdevVersion: string): Promise<InitChange[]> {
+  return (await plan(rootDir, napdevVersion)).changes
+}
+
+async function plan(rootDir: string, napdevVersion: string): Promise<{ changes: InitChange[]; skipped: InitSkip[] }> {
   const changes: InitChange[] = []
+  const skipped: InitSkip[] = []
   for (const dir of await workspaceDirs(rootDir)) {
     const file = dir ? `${dir}/package.json` : 'package.json'
     let before: string
@@ -272,10 +289,11 @@ export async function planInit(rootDir: string, napdevVersion: string): Promise<
     } catch {
       continue
     }
-    const after = editPackage(before, napdevVersion)
-    if (after !== null && after !== before) changes.push({ file, before, after })
+    const edit = editPackage(before, napdevVersion)
+    for (const script of edit.skipped) skipped.push({ file, script, reason: `${HTTPS_FLAG} is not supported yet` })
+    if (edit.after !== null && edit.after !== before) changes.push({ file, before, after: edit.after })
   }
-  return changes
+  return { changes, skipped }
 }
 
 // ---- command ----------------------------------------------------------------------------------------
@@ -323,12 +341,15 @@ export async function runInit(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
     return 1
   }
   let changes: InitChange[]
+  let skipped: InitSkip[]
   try {
-    changes = await planInit(cwd, ownVersion())
+    ({ changes, skipped } = await plan(cwd, ownVersion()))
   } catch (err) {
     process.stderr.write(`napdev: ${(err as Error).message}\n`)
     return 1
   }
+  for (const s of skipped) process.stdout.write(`Skipped ${s.file} script "${s.script}": ${s.reason}.\n`)
+  if (skipped.length) process.stdout.write('\n')
   if (changes.length === 0) {
     process.stdout.write('Nothing to change.\n')
     return 0

@@ -200,6 +200,17 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     expect(await exitCode(cli)).toBe(0)
   })
 
+  it('--experimental-https runs plain next dev with every flag', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port), '--experimental-https'])
+    expect(await waitForLine(cli, /^napdev:/)).toBe('napdev: --experimental-https is not supported yet; running next dev directly')
+    await waitForLine(cli, /Local:/)
+    const body = await (await fetch(`http://127.0.0.1:${port}/`)).text()
+    expect(body).toMatch(/public=$/) // Next itself owns the port, no gate in front
+    expect(cli.lines.some((l) => l.startsWith('napdev listening'))).toBe(false)
+    cli.proc.kill('SIGTERM')
+    expect(await exitCode(cli)).toBe(0)
+  })
+
   it('an explicit port that is taken exits 1 with the port in the message', async () => {
     const blocker = net.createServer()
     await new Promise<void>((r) => blocker.listen(port, '127.0.0.1', () => r()))

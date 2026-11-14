@@ -283,6 +283,18 @@ function serve(session: DevSession, ready: () => void): Promise<number> {
 }
 
 export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
+  // the gate speaks plain HTTP to Next; a TLS dev server cannot sit behind it yet
+  if (argv.some((a) => a.startsWith('--experimental-https'))) {
+    let nextBin: string
+    try {
+      nextBin = resolveNextBin(cwd, env)
+    } catch {
+      process.stderr.write(`napdev: could not find next in ${cwd}\n`)
+      return 1
+    }
+    process.stderr.write('napdev: --experimental-https is not supported yet; running next dev directly\n')
+    return runNext(nextBin, ['dev', ...argv], cwd, env)
+  }
   const progress: Progress = {}
   let session: DevSession
   try {

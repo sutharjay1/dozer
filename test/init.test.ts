@@ -193,6 +193,26 @@ describe('runInit', () => {
     expect(io2.out()).toContain('Nothing to change.')
   })
 
+  it('leaves --experimental-https scripts unchanged and lists them as skipped', async () => {
+    const root = make({
+      'package.json': { name: 'r', workspaces: ['apps/*'] },
+      'apps/web/package.json': { name: 'web', dependencies: { next: '^16.0.0' },
+        scripts: { dev: 'next dev', 'dev:https': 'next dev --experimental-https -p 3443' } },
+      'apps/tls/package.json': { name: 'tls', dependencies: { next: '^16.0.0' },
+        scripts: { dev: 'next dev --experimental-https-key k.pem --experimental-https' } },
+    })
+    const tls = read(root, 'apps/tls/package.json')
+    const io = silence()
+    expect(await runInit(['--yes'], {}, root)).toBe(0)
+    const web = JSON.parse(read(root, 'apps/web/package.json'))
+    expect(web.scripts).toEqual({ dev: 'napdev next dev', 'dev:https': 'next dev --experimental-https -p 3443' })
+    expect(read(root, 'apps/tls/package.json')).toBe(tls)
+    expect(io.out()).toContain('Skipped apps/tls/package.json script "dev": --experimental-https is not supported yet.')
+    expect(io.out()).toContain('Skipped apps/web/package.json script "dev:https": --experimental-https is not supported yet.')
+    expect(io.out()).toContain('Updated 1 file.')
+    expect(files(await planInit(root, '0.1.0'))).toEqual([])
+  })
+
   it('rejects unknown arguments', async () => {
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     expect(await runInit(['--bogus'], {}, setup())).toBe(1)
