@@ -33,7 +33,7 @@ export interface DevSession {
   onGateChange(listener: GateListener): () => void
   /** Adds a listener for requests in flight going 0 to 1 and 1 to 0; returns a function that removes it. */
   onActivity(listener: (snapshot: GateSnapshot) => void): () => void
-  /** Process groups of every Next child that has not exited yet (awake, waking or being stopped). */
+  /** Process groups of every Next child not yet verified gone (awake, waking, crashed or being stopped). */
   childPids(): number[]
   /** Stops Next (verified dead) and closes the public port. Rejects if the tree survived. */
   close(): Promise<void>
@@ -66,11 +66,12 @@ async function startDev(argv: string[], env: NodeJS.ProcessEnv, appDir: string, 
       rewriters.set(child.hiddenPort, rw)
       live.add(child.pid)
       void child.exited.then(() => {
-        live.delete(child.pid)
+        // the group stays in `live` (for the second Ctrl+C) until a stop verified it is gone
         if (rewriters.get(child.hiddenPort) === rw) rewriters.delete(child.hiddenPort)
         emit(rw.flush())
       })
     },
+    onGone: (child: ChildHandle) => { live.delete(child.pid) },
     onOutput: (text, hiddenPort) => {
       const rw = rewriters.get(hiddenPort)
       emit(rw ? rw(text) : text)
@@ -120,9 +121,8 @@ async function startDev(argv: string[], env: NodeJS.ProcessEnv, appDir: string, 
       try {
         await gate.sleep('exit')
         const left = gate.snapshot()
-        if (left.childPid !== null || left.strays > 0) {
-          throw new Error(`${left.strays || 1} Next.js process tree(s) still running`)
-        }
+        const trees = left.strays + (left.childPid !== null ? 1 : 0)
+        if (trees > 0) throw new Error(`${trees} Next.js process tree(s) still running`)
       } finally {
         await hub.close()
         await closeServer(server)

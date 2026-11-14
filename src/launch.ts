@@ -17,6 +17,8 @@ export function createChildLauncher(o: {
   onOutput(text: string, hiddenPort: number): void
   /** Called right after each spawn, before any of its output arrives. */
   onSpawn?(child: ChildHandle): void
+  /** Called once a child's whole process group is verified gone. */
+  onGone?(child: ChildHandle): void
 }): ChildLauncher {
   return {
     async startChild(signal) {
@@ -35,10 +37,13 @@ export function createChildLauncher(o: {
         return child
       } catch (err) {
         // the caller only learns of the failure once nothing from this child is left running
-        await stopTree(child.pid).catch(() => {})
+        await stopTree(child.pid).then(() => o.onGone?.(child), () => {})
         throw err
       }
     },
-    stopChild: (child) => stopTree(child.pid),
+    async stopChild(child) {
+      await stopTree(child.pid)
+      o.onGone?.(child)
+    },
   }
 }

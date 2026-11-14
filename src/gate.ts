@@ -21,7 +21,7 @@ export interface GateSnapshot {
   awakeAt: number | null
 }
 
-export type GateErrorContext = 'late-stop' | 'idle-stop' | 'on-change'
+export type GateErrorContext = 'late-stop' | 'idle-stop' | 'crash-stop' | 'on-change'
 
 export interface GateDeps {
   config: AppConfig
@@ -246,10 +246,23 @@ export class Gate {
 
   private onChildExit(handle: ChildHandle): void {
     if (this.child !== handle || this.stopping === handle) return
-    this.child = null
-    this.state = 'asleep'
+    // Next's main process is gone but its workers may not be: stop the whole group first
     this.clearIdle()
-    this.emit('crashed')
+    this.stopping = handle
+    this.sleeping = (async () => {
+      try {
+        await Promise.resolve().then(() => this.deps.stopChild(handle))
+      } catch (err) {
+        this.strays.add(handle)
+        this.reportError(err, 'crash-stop')
+      } finally {
+        this.sleeping = null
+        this.stopping = null
+      }
+      this.child = null
+      this.state = 'asleep'
+      this.emit('crashed')
+    })()
   }
 
   // --- sleeping -----------------------------------------------------------

@@ -148,12 +148,41 @@ describe('Gate', () => {
     await g.ensureAwake(); expect(g.snapshot().failedWakes).toBe(0)
   })
 
-  it('returns to asleep with reason crashed when the child exits', async () => {
+  it('returns to asleep with reason crashed when the child exits, after stopping its whole group', async () => {
+    const order: string[] = []
+    deps.stopChild.mockImplementation(async (h) => { order.push(`stop ${h.pid} ${g.snapshot().state}`) })
+    deps.onChange.mockImplementation((snap, reason) => { if (reason) order.push(`${snap.state} ${reason}`) })
     await g.ensureAwake(); child.exit(1); await vi.advanceTimersByTimeAsync(0)
     expect(g.snapshot().state).toBe('asleep')
     expect(deps.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'asleep', childPid: null }), 'crashed')
-    expect(deps.stopChild).not.toHaveBeenCalled()
+    expect(order).toEqual(['stop 111 awake', 'asleep crashed'])
+    expect(g.snapshot().strays).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('a crashed child whose group survives the stop is kept as a stray and reported', async () => {
+    await g.ensureAwake()
+    deps.stopChild.mockRejectedValueOnce(new Error('survived'))
+    child.exit(null); await vi.advanceTimersByTimeAsync(0)
+    expect(g.snapshot()).toMatchObject({ state: 'asleep', childPid: null, strays: 1 })
+    expect(deps.onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'survived' }), 'crash-stop')
+    expect(deps.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'asleep', strays: 1 }), 'crashed')
+    // the next sleep retries the stray
+    await g.ensureAwake(); await g.sleep('manual')
+    expect(g.snapshot().strays).toBe(0)
+  })
+
+  it('ensureAwake while a crashed child is being stopped waits and wakes fresh', async () => {
+    let release!: () => void
+    deps.stopChild.mockImplementationOnce(() => new Promise<void>((r) => { release = r }))
+    await g.ensureAwake(); child.exit(1); await vi.advanceTimersByTimeAsync(0)
+    const second = fakeChild(4200, 222)
+    deps.startChild.mockResolvedValueOnce(second.handle)
+    const p = g.ensureAwake()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(deps.startChild).toHaveBeenCalledTimes(1)
+    release()
+    expect(await p).toBe(4200)
   })
 
   it('a child that exits because the gate stopped it is not reported as crashed', async () => {

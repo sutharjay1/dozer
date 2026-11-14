@@ -18,6 +18,8 @@ const root = mkdtempSync(join(tmpdir(), 'napdev-dev-test-'))
 const FAKE = join(root, `fake-next-${randomUUID()}.mjs`)
 symlinkSync(FIXTURE, FAKE)
 
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
 function pgrep(pattern: string): number[] {
   try {
     return execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).map(Number)
@@ -137,6 +139,22 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     expect(await exitCode(cli)).toBe(0)
     expect(pgrep(FAKE)).toEqual([])
     expect(await isPortFree(port, null)).toBe(true)
+  })
+
+  it('a crashed next leaves no worker behind, and the next request wakes a fresh one', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port)])
+    await waitForLine(cli, /napdev listening/)
+    const body = await (await fetch(`http://localhost:${port}/`)).text()
+    const main = Number(/pid=(\d+)/.exec(body)![1])
+    await waitForLine(cli, /grandchild=/)
+    const [grandchild] = cli.grandchildren
+    process.kill(main, 'SIGKILL')
+    for (let i = 0; i < 50 && pgrep(FAKE).length; i++) await new Promise((r) => setTimeout(r, 100))
+    expect(pgrep(FAKE)).toEqual([])
+    expect(alive(grandchild!)).toBe(false)
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
+    cli.proc.kill('SIGTERM')
+    expect(await exitCode(cli)).toBe(0)
   })
 
   // the spec's goal 1: an ESM bundle and an eager `ws` load put it at ~72 MB on macOS
