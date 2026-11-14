@@ -294,6 +294,14 @@ export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string
     }
     return fallback(err, argv, env, cwd, progress)
   }
+  // a bug in napdev must not leave Next running: kill every group we started, then exit
+  const crash = (err: unknown) => {
+    for (const pid of session.childPids()) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
+    process.stderr.write(`napdev: crashed (${message(err)})\n`)
+    process.exit(1)
+  }
+  process.on('uncaughtException', crash)
+  process.on('unhandledRejection', crash)
   if (env.NAPDEV_DEBUG === '1') process.stderr.write(`napdev: identity ${JSON.stringify(session.identity)}\n`)
   let detach = () => {}
   const code = await serve(session, () => {

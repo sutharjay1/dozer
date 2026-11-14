@@ -112,12 +112,13 @@ describe('SocketHub', () => {
 
   it('server frames count as activity; browser frames do not', async () => {
     const { url, wsUrl, gate } = await start()
-    await fetch(url)
+    // childPid is the guard's; the body names fake-next's own pid
+    const nextPid = Number(/pid=(\d+)/.exec(await (await fetch(url)).text())![1])
     const ws = await open(wsUrl)
     await nextMessage(ws)
     const spy = vi.spyOn(gate, 'noteServerFrame')
     const built = nextMessage(ws)
-    process.kill(gate.snapshot().childPid!, 'SIGUSR2')
+    process.kill(nextPid, 'SIGUSR2')
     expect(JSON.parse(await built).type).toBe('built')
     expect(spy).toHaveBeenCalledTimes(1)
     ws.send('ping')

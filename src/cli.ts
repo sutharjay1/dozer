@@ -4,6 +4,7 @@ import { runDev } from './commands/dev.js'
 import { runInit } from './commands/init.js'
 import { runStatus } from './commands/status.js'
 import { runCoordinator } from './coordinator/server.js'
+import { runGuard } from './guard.js'
 import { runNext } from './passthrough.js'
 
 const USAGE = `usage: napdev next dev [next dev options]
@@ -14,6 +15,7 @@ const USAGE = `usage: napdev next dev [next dev options]
 `
 
 async function main(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
+  if (argv[0] === '__guard') return runGuard(argv.slice(1)) // hidden: leads an awake Next's process group
   if (argv[0] === '__coordinator') return runCoordinator(env) // hidden: started by the first gate
   if (argv[0] === 'status') return runStatus(argv.slice(1), env)
   if (argv[0] === 'sleep') return runSleep(argv.slice(1), env)
@@ -34,7 +36,9 @@ async function main(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promis
   return runNext(nextBin, argv.slice(1), cwd, env)
 }
 
-process.stdout.on('error', () => {}) // a closed pipe must not crash napdev while Next is running
+// a closed pipe or terminal (EPIPE, EIO) must not crash napdev while Next is running
+process.stdout.on('error', () => {})
+process.stderr.on('error', () => {})
 main(process.argv.slice(2), process.env, process.cwd()).then(
   (code) => process.exit(code),
   (err: unknown) => {

@@ -157,6 +157,20 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     expect(await exitCode(cli)).toBe(0)
   })
 
+  it('SIGKILL of the gate leaves no next process within 3 s', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port)])
+    await waitForLine(cli, /napdev listening/)
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
+    await waitForLine(cli, /grandchild=/)
+    expect(pgrep(FAKE).length).toBeGreaterThan(0)
+    const t0 = Date.now()
+    cli.proc.kill('SIGKILL')
+    await exitCode(cli)
+    while (pgrep(FAKE).length && Date.now() - t0 < 3_000) await new Promise((r) => setTimeout(r, 50))
+    expect(pgrep(FAKE)).toEqual([])
+    expect(cli.grandchildren.filter(alive)).toEqual([])
+  })
+
   // the spec's goal 1: an ESM bundle and an eager `ws` load put it at ~72 MB on macOS
   it('a sleeping gate stays under 60 MB RSS', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])

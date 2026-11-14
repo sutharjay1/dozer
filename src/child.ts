@@ -1,7 +1,8 @@
 import { spawn, execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
 import http from 'node:http'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export interface ChildHandle { pid: number; hiddenPort: number; exited: Promise<number | null> }
 
@@ -21,20 +22,26 @@ export function resolveNextBin(appDir: string, env: NodeJS.ProcessEnv): string {
   }
 }
 
+// In the bundle this module lives inside dist/cli.cjs; run from source (tests), the built CLI is used.
+const SELF = fileURLToPath(import.meta.url)
+export const GUARD_CLI = SELF.endsWith('.cjs') ? SELF : join(dirname(SELF), '..', 'dist', 'cli.cjs')
+
+/**
+ * Starts Next under a guard process (see guard.ts) that leads a new process group; the handle's
+ * pid is the guard's, which is also the group id. The guard kills the group if this process dies.
+ */
 export function spawnChild(o: {
   nextBin: string; cwd: string; env: NodeJS.ProcessEnv; passthrough: string[]
   hiddenPort: number; publicPort: number; onOutput(text: string): void
 }): ChildHandle {
+  const env: NodeJS.ProcessEnv = { ...o.env, NAPDEV_PUBLIC_PORT: String(o.publicPort), PORT: String(o.hiddenPort) }
   const child = spawn(
     process.execPath,
-    [o.nextBin, 'dev', ...o.passthrough, '--port', String(o.hiddenPort), '--hostname', '127.0.0.1'],
-    {
-      cwd: o.cwd,
-      env: { ...o.env, NAPDEV_PUBLIC_PORT: String(o.publicPort), PORT: String(o.hiddenPort) },
-      detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
+    [GUARD_CLI, '__guard', o.nextBin, 'dev', ...o.passthrough, '--port', String(o.hiddenPort), '--hostname', '127.0.0.1'],
+    { cwd: o.cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] },
   )
+  // held open and never written: it ends only when this process dies
+  child.stdin.on('error', () => {})
   child.stdout.setEncoding('utf8').on('data', (d: string) => o.onOutput(d))
   child.stderr.setEncoding('utf8').on('data', (d: string) => o.onOutput(d))
   const exited = new Promise<number | null>((resolve) => {
