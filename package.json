@@ -1,0 +1,29 @@
+{
+  "name": "napdev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Holds a Next.js app's dev port and runs the real next dev only while pages are requested.",
+  "type": "module",
+  "bin": {
+    "napdev": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.10.0",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "tsup": "^9.0.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}
