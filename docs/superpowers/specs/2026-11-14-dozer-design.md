@@ -1,6 +1,6 @@
-# napdev — design
+# dozer — design
 
-Working name `napdev` (free on npm as of 2026-11-14). Status: draft for approval.
+Working name: napdev, renamed to dozer on 2026-11-15. Status: draft for approval.
 
 ## Intent and why
 
@@ -9,7 +9,7 @@ agent session) starts one `next dev` per checkout. Each stays up whether or not
 anyone is looking at it. On a 24 GB laptop that leaves no room for the browser,
 Docker, the agent apps and everything else.
 
-`napdev` makes a Next.js dev server cost memory and CPU **only while someone is
+`dozer` makes a Next.js dev server cost memory and CPU **only while someone is
 requesting pages from it**. It must work in any Next.js app, in any monorepo
 (Turborepo, pnpm/npm/yarn/bun workspaces, or a single app), without the app
 knowing it is there.
@@ -61,14 +61,14 @@ lighter, for every Next.js repo and not one company's. Everything below marked
 
 ## Anti-goals
 
-- Dev must never be blocked by napdev. If napdev itself fails to start (cannot
+- Dev must never be blocked by dozer. If dozer itself fails to start (cannot
   set up its listener or state), it runs plain `next dev` on the original port
   instead. This applies at start-up only; there is no live hand-back of the
   port later. A server started this way is outside the limit and not shown in
-  `status`. After start-up the escape hatch is `NAPDEV=0`.
+  `status`. After start-up the escape hatch is `DOZER=0`.
 - A tab left open must never keep a server awake, or wake it, through the dev
   websocket or the reload that follows a lost websocket. A tab that sends real
-  HTTP requests on a timer (polling, session checks) does wake the app; napdev
+  HTTP requests on a timer (polling, session checks) does wake the app; dozer
   cannot tell that from a person. Documented limit.
 - The app must not behave differently in the browser, apart from a delay on the
   first request after sleep.
@@ -84,17 +84,17 @@ lighter, for every Next.js repo and not one company's. Everything below marked
 
 ## Install
 
-napdev is a devDependency of the repo, and the dev script change is committed,
-so every teammate and every fresh worktree gets it **(my call)**. `napdev init`
+dozer is a devDependency of the repo, and the dev script change is committed,
+so every teammate and every fresh worktree gets it **(my call)**. `dozer init`
 adds the dependency and rewrites the scripts. Repos whose files cannot be
-changed wait for the "No repo change" stage. Gates from different napdev
+changed wait for the "No repo change" stage. Gates from different dozer
 versions can meet on one machine: a gate that cannot talk to the running
 coordinator works with the idle rule only.
 
 ## Approaches considered
 
 1. **Port gate in place of `next dev` (chosen).** The dev script becomes
-   `napdev next dev …`. napdev listens on the port Next would have used and
+   `dozer next dev …`. dozer listens on the port Next would have used and
    runs the real `next dev` on a hidden port only while there is traffic.
    Trade-off: one edit to each dev script; app code that reads `PORT` sees the
    hidden port.
@@ -114,7 +114,7 @@ Jay asked for the best plan rather than a choice, so approach 1 is **my call**.
 
 `asleep` (no Next process) → `waking` → `awake` → `asleep`.
 
-- **Start.** `napdev next dev [args]` binds the public port (from `--port`/`-p`,
+- **Start.** `dozer next dev [args]` binds the public port (from `--port`/`-p`,
   else `PORT`, else 3000) and starts **asleep**. It prints a ready line with the
   public URL so tools that wait on output continue. Exact wording is the
   builder's, but it must contain the public URL and must not claim Next is
@@ -123,7 +123,7 @@ Jay asked for the best plan rather than a choice, so approach 1 is **my call**.
   and print it; if a port was given explicitly and is taken, fail with a clear
   error. A sleeping gate keeps its port, so a worktree's URL is stable.
 - **Wake.** Any HTTP request that is not a websocket upgrade wakes the app.
-  napdev starts the real `next dev` on a free loopback port and holds the
+  dozer starts the real `next dev` on a free loopback port and holds the
   request until Next answers, then proxies it. No interstitial page **(my
   call)**: `curl`, tests and agents must receive the real response. Wake
   timeout default 120 s, then 504.
@@ -148,18 +148,18 @@ Jay asked for the best plan rather than a choice, so approach 1 is **my call**.
   the tree and frees the port.
 - **Crash.** If Next exits while awake, the app becomes asleep. After 3 failed
   wakes in a row, requests get a 502 showing the last log lines and pointing at
-  `NAPDEV=0`, until the next successful wake.
-- **Bypass.** `NAPDEV=0` runs the real `next dev` untouched.
+  `DOZER=0`, until the next successful wake.
+- **Bypass.** `DOZER=0` runs the real `next dev` untouched.
 
 ### The websocket rule (the part most likely to go wrong)
 
-napdev terminates the browser's dev websocket itself; it does not pipe the TCP
+dozer terminates the browser's dev websocket itself; it does not pipe the TCP
 connection through.
 
 - While asleep, browser sockets stay open and silent, and new upgrade attempts
   are accepted and held. Neither wakes the app. This stops the client's
   reconnect counter and its page reload.
-- On wake, napdev sends each held socket one reload frame,
+- On wake, dozer sends each held socket one reload frame,
   `{"action":"reloadPage","type":"reloadPage"}`, then closes it with code 1012.
   The page reloads once and connects to the new server. That reload is correct:
   the server is new. Next 15 clients read `action`, Next 16 clients read `type`,
@@ -167,7 +167,7 @@ connection through.
   Router client never reconnects after a close (spike 1, `spikes/RESULTS.md`:
   6/8 with close only, 8/8 with the reload frame).
 - Next 15 serves the dev socket at `/_next/webpack-hmr`, Next 16 at
-  `/_next/hmr`. napdev accepts every upgrade, so the path does not matter.
+  `/_next/hmr`. dozer accepts every upgrade, so the path does not matter.
 
 ### Hidden port
 
@@ -175,8 +175,8 @@ connection through.
   origin checks and HMR all see the public port.
 - Child log output passes through with the hidden port rewritten to the public
   one, so nobody copies the hidden URL and bypasses the gate.
-- `PORT` inside the app is the hidden port. napdev also sets
-  `NAPDEV_PUBLIC_PORT`. Known wart, documented.
+- `PORT` inside the app is the hidden port. dozer also sets
+  `DOZER_PUBLIC_PORT`. Known wart, documented.
 
 ### Coordinator
 
@@ -191,10 +191,10 @@ layout (Claude Code, Codex and hand-made worktrees all differ).
 
 ### Commands
 
-- `napdev next dev [args]` — the gate.
-- `napdev status` — every gated app: name, state, public port, RSS, last request.
-- `napdev sleep <name> | --all`, `napdev wake <name>`.
-- `napdev init` — finds Next apps in the workspace and rewrites their dev
+- `dozer next dev [args]` — the gate.
+- `dozer status` — every gated app: name, state, public port, RSS, last request.
+- `dozer sleep <name> | --all`, `dozer wake <name>`.
+- `dozer init` — finds Next apps in the workspace and rewrites their dev
   scripts. Shows the diff and changes nothing without confirmation.
 
 ### Settings
@@ -243,6 +243,6 @@ process tree is killed and verified, provided goal 5 holds.
 ## Expected benefit (estimate, not measured)
 
 Using the 5–8 GB per server measured in Kortix: three started worktrees cost
-15–24 GB today. With napdev and `maxAwake=2` the ceiling is 10–16 GB while two
+15–24 GB today. With dozer and `maxAwake=2` the ceiling is 10–16 GB while two
 are in use, 5–8 GB with `maxAwake=1`, and near zero when nothing is being
 viewed. Sleeping servers use no CPU, including when an agent edits their files.
