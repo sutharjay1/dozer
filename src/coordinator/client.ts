@@ -24,7 +24,12 @@ const ASK_TIMEOUT_MS = 2_000
 // In the bundle this module lives inside dist/cli.js itself.
 const CLI_PATH = fileURLToPath(import.meta.url)
 
+// one start attempt per gate process; later retries only connect
+let daemonSpawned = false
+
 function spawnDaemon(home: string): void {
+  if (daemonSpawned) return
+  daemonSpawned = true
   try {
     const child = spawn(process.execPath, [CLI_PATH, '__coordinator'], {
       detached: true, stdio: 'ignore', env: { ...process.env, NAPDEV_HOME: home },
@@ -49,7 +54,6 @@ async function register(hello: Hello, home: string, onLine: (m: Record<string, u
   const path = socketPath(home)
   if (!socketPathUsable(path)) return null
   const end = Date.now() + START_WAIT_MS
-  let spawned = false
   for (;;) {
     const socket = await dial(path)
     if (socket) {
@@ -67,8 +71,7 @@ async function register(hello: Hello, home: string, onLine: (m: Record<string, u
         socket.write(encode(hello))
       })
       if (answer) return answer
-    } else if (!spawned) {
-      spawned = true
+    } else {
       spawnDaemon(home)
     }
     if (Date.now() >= end) return null

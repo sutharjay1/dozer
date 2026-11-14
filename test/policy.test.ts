@@ -3,7 +3,7 @@ import { chooseVictims } from '../src/coordinator/policy.js'
 import type { AppView } from '../src/coordinator/protocol.js'
 
 const app = (id: string, lastHttpAt: number | null, extra: Partial<AppView> = {}): AppView => ({
-  id, name: id, cwd: `/apps/${id}`, publicPort: 3000, pid: 1, pinned: false,
+  id, name: id, cwd: `/apps/${id}`, publicPort: 3000, pid: 1, pinned: false, graceMs: 60_000,
   state: 'awake', inFlight: 0, lastHttpAt, lastActiveAt: lastHttpAt, rssBytes: 0, ...extra,
 })
 
@@ -33,6 +33,9 @@ describe('chooseVictims', () => {
   it('spares an app woken just now even when it has never served a request', () => {
     expect(chooseVictims([app('a', 400_000), app('b', null, { lastActiveAt: 499_000 })], { ...L, maxAwake: 1 }, 500_000))
       .toEqual(['a'])
+  })
+  it('uses each app its own grace, so a longer one moves the choice to the next app', () => {
+    expect(chooseVictims([app('a', 0, { graceMs: 600_000 }), app('b', 1_000), app('c', 400_000)], L, 500_000)).toEqual(['b'])
   })
   it('chooses several apps, oldest first, until under the limit', () => {
     expect(chooseVictims([app('c', 3_000), app('a', 1_000), app('b', null), app('d', 4_000)], { ...L, maxAwake: 1 }, 500_000))

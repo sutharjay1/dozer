@@ -172,6 +172,58 @@ describe('coordinator', { timeout: 30_000 }, () => {
     }
   })
 
+  it('each gate is judged by its own grace, so a long one does not stall the limit', async () => {
+    // A starts the daemon, so the daemon's own default grace is A's 30 s
+    const a = await startCli('a', { NAPDEV_GRACE: '30s' })
+    await registered(1)
+    const b = await startCli('b')
+    const apps = await registered(2)
+    expect(apps.map((v) => v.graceMs).sort((x, y) => x - y)).toEqual([1_000, 30_000])
+    expect((await get(a)).status).toBe(200)
+    await sleepMs(1_200)
+    expect((await get(b)).status).toBe(200)
+    await vi.waitFor(async () => expect(states(await list())).toEqual({ a: 'awake', b: 'asleep' }),
+      { timeout: 9_000, interval: 100 })
+  })
+
+  it('a refused eviction moves to the next app and is retried once its grace passes', async () => {
+    const d = spawn(process.execPath, [CLI, '__coordinator'],
+      { env: { ...process.env, NAPDEV_HOME: home, NAPDEV_MAX_AWAKE: '1' }, stdio: 'ignore' })
+    d.unref()
+    await vi.waitFor(() => expect(daemonPids()).toHaveLength(1))
+    // two hand-driven gates: x is the oldest and refuses its first eviction
+    const gate = async (id: string, lastActiveAt: number) => {
+      const s = net.connect(socketPath(home))
+      const got: string[] = []
+      s.setEncoding('utf8').on('data', (c: string) => got.push(...c.split('\n').filter(Boolean)))
+      await new Promise((r) => s.once('connect', r))
+      s.write(JSON.stringify({ t: 'hello', v: PROTOCOL_VERSION,
+        app: { id, name: id, cwd: `/${id}`, publicPort: 1, pid: process.pid, pinned: false, graceMs: 1_000 } }) + '\n')
+      await vi.waitFor(() => expect(got).toContain(JSON.stringify({ t: 'welcome', v: PROTOCOL_VERSION })))
+      const report = (extra: object = {}) => s.write(JSON.stringify({ t: 'report', state: 'awake', inFlight: 0,
+        lastHttpAt: lastActiveAt, lastActiveAt, rssBytes: 0, ...extra }) + '\n')
+      const evictions = () => got.filter((l) => l.includes('"evicted"')).length
+      return { s, report, evictions }
+    }
+    const now = Date.now()
+    const x = await gate('x', now - 5_000)
+    const y = await gate('y', now - 2_000)
+    try {
+      x.report()
+      y.report()
+      await vi.waitFor(() => expect(x.evictions()).toBe(1))
+      expect(y.evictions()).toBe(0)
+      x.report({ refused: true })
+      await vi.waitFor(() => expect(y.evictions()).toBe(1))
+      // y obeys (it goes to sleep); x is still over the limit only if y stays up, so keep y awake
+      y.report({ refused: true })
+      await vi.waitFor(() => expect(x.evictions()).toBe(2), { timeout: 8_000, interval: 100 })
+    } finally {
+      x.s.destroy()
+      y.s.destroy()
+    }
+  })
+
   it('an app woken from the command line gets grace; the other one is evicted', async () => {
     const a = await startCli('a')
     await startCli('b')
@@ -207,7 +259,10 @@ describe('coordinator', { timeout: 30_000 }, () => {
     process.kill(pid!, 'SIGKILL')
     await vi.waitFor(() => expect(alive(pid!)).toBe(false))
     expect((await get(a)).status).toBe(200)
-    // it reconnects to a fresh coordinator in the background
+    await sleepMs(5_500)
+    expect(daemonPids()).toHaveLength(1) // a gate starts a daemon at most once
+    // it registers again with the next coordinator (here started by hand, as a new gate would)
+    spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, NAPDEV_HOME: home }, stdio: 'ignore' }).unref()
     await vi.waitFor(async () => expect(states(await list())).toEqual({ a: 'awake' }), { timeout: 12_000, interval: 200 })
     expect(daemonPids()).toHaveLength(2)
   })
@@ -215,7 +270,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
   it('a gate with another protocol version is rejected and runs degraded', async () => {
     await startCli('a')
     await registered(1)
-    const app = { id: 'x', name: 'x', cwd: '/x', publicPort: 1, pid: process.pid, pinned: false }
+    const app = { id: 'x', name: 'x', cwd: '/x', publicPort: 1, pid: process.pid, pinned: false, graceMs: 1_000 }
     const client = await connectGate({ t: 'hello', v: 99, app }, home)
     expect(client.connected).toBe(false)
     client.report({ t: 'report', state: 'awake', inFlight: 0, lastHttpAt: null, lastActiveAt: null, rssBytes: 0 }) // no-op
@@ -225,7 +280,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
 
   it('a gate whose first connect failed registers once a coordinator appears', async () => {
     // imported from src, connectGate cannot start a daemon (it would run src/coordinator/client.ts)
-    const app = { id: 'late', name: 'late', cwd: '/late', publicPort: 1, pid: process.pid, pinned: false }
+    const app = { id: 'late', name: 'late', cwd: '/late', publicPort: 1, pid: process.pid, pinned: false, graceMs: 1_000 }
     const client = await connectGate({ t: 'hello', v: PROTOCOL_VERSION, app }, home)
     try {
       expect(client.connected).toBe(false)

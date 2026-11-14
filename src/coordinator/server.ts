@@ -1,4 +1,4 @@
-import { appendFileSync, chmodSync, existsSync, linkSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs'
 import net from 'node:net'
 import { join } from 'node:path'
 import { DEFAULTS, loadMachineConfig, napdevHome } from '../config.js'
@@ -13,7 +13,12 @@ const LINGER_MS = 10_000
 const PROBE_TIMEOUT_MS = 1_000
 const STATES: readonly GateState[] = ['asleep', 'waking', 'awake']
 
-interface GateConn { key: string; socket: net.Socket; view: AppView; evictSent: boolean }
+interface GateConn {
+  key: string; socket: net.Socket; view: AppView
+  evictSent: boolean
+  /** when the gate last refused an eviction; it sits out decisions until its grace has passed since */
+  refusedAt: number | null
+}
 
 /** Resolves true when something answers on the socket path. */
 export function probe(path: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolean> {
@@ -61,9 +66,15 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
   }
 
   const enforce = () => {
+    const now = Date.now()
     const conns = [...gates.values()]
-    // keyed by connection, so two gates with the same app id are still told apart
-    const victims = chooseVictims(conns.map((c) => ({ ...c.view, id: c.key })), limits, Date.now())
+    for (const c of conns) {
+      if (c.refusedAt !== null && now - c.refusedAt >= c.view.graceMs) { c.refusedAt = null; c.evictSent = false }
+    }
+    // keyed by connection, so two gates with the same app id are still told apart; a gate that
+    // refused still counts toward the limit but is not chosen
+    const victims = chooseVictims(
+      conns.map((c) => ({ ...c.view, id: c.key, pinned: c.view.pinned || c.refusedAt !== null })), limits, now)
     for (const key of victims) {
       const c = conns.find((g) => g.key === key)!
       if (c.evictSent) continue
@@ -91,9 +102,10 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
       const view: AppView = {
         id: String(app.id ?? ''), name: String(app.name ?? ''), cwd: String(app.cwd ?? ''),
         publicPort: num(app.publicPort, 0), pid: num(app.pid, 0), pinned: app.pinned === true,
+        graceMs: num(app.graceMs, limits.graceMs),
         state: 'asleep', inFlight: 0, lastHttpAt: null, lastActiveAt: null, rssBytes: 0,
       }
-      gates.set(socket, { key: String(nextKey++), socket, view, evictSent: false })
+      gates.set(socket, { key: String(nextKey++), socket, view, evictSent: false, refusedAt: null })
       armLinger()
       log(`register id=${view.id} pid=${view.pid} port=${view.publicPort} name=${JSON.stringify(view.name)}`)
       send(socket, { t: 'welcome', v: PROTOCOL_VERSION })
@@ -112,7 +124,14 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
       }
       // a gate that refused an eviction reports fresher facts; decide again on them
       const v = conn.view
-      if (v.state !== old.state || v.inFlight !== old.inFlight || v.lastActiveAt !== old.lastActiveAt) conn.evictSent = false
+      if (v.state !== old.state || v.inFlight !== old.inFlight || v.lastActiveAt !== old.lastActiveAt) {
+        conn.evictSent = false
+        conn.refusedAt = null
+      }
+      if (msg.refused === true) {
+        conn.refusedAt = Date.now()
+        log(`refused id=${v.id} pid=${v.pid}`)
+      }
       enforce()
       return
     }
@@ -197,17 +216,13 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
     clearTimeout(linger)
     for (const sig of ['SIGTERM', 'SIGINT'] as const) process.off(sig, onSignal)
     for (const s of sockets) s.destroy()
-    // closing unlinks the path, whoever it belongs to now: keep a replacement aside and put it back
-    let kept: string | null = null
-    if (!isMine() && existsSync(path)) {
-      kept = `${path}.${process.pid}.keep`
-      try { linkSync(path, kept) } catch { kept = null }
-    }
-    await new Promise<void>((r) => server.close(() => r()))
-    if (kept) {
-      try { renameSync(kept, path) } catch { /* it changed again; leave it */ }
-    } else if (isMine()) {
+    if (isMine()) {
+      await new Promise<void>((r) => server.close(() => r())) // also unlinks the path
       try { unlinkSync(path) } catch { /* gone */ }
+    } else {
+      // server.close() unlinks the path whoever owns it now; the process exit that follows
+      // releases the listener without touching the file
+      log('socket path now belongs to someone else; leaving it')
     }
     log(`exit (${why})`)
     finished(0)

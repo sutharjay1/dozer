@@ -182,13 +182,13 @@ function attachCoordinator(session: DevSession, env: NodeJS.ProcessEnv): () => v
 
   const lastActiveAt = (s: GateSnapshot) =>
     s.lastHttpAt === null && s.awakeAt === null ? null : Math.max(s.lastHttpAt ?? 0, s.awakeAt ?? 0)
-  const report = () => {
+  const report = (refused = false) => {
     clearTimeout(pending)
     pending = undefined
     lastReportAt = Date.now()
     const s = gate.snapshot()
     client?.report({ t: 'report', state: s.state, inFlight: s.inFlight, lastHttpAt: s.lastHttpAt,
-      lastActiveAt: lastActiveAt(s), rssBytes: s.childPid === null ? 0 : rssBytes })
+      lastActiveAt: lastActiveAt(s), rssBytes: s.childPid === null ? 0 : rssBytes, ...(refused ? { refused: true } : {}) })
   }
   // at most one activity report per 250 ms; the last change is always sent
   const reportSoon = () => {
@@ -223,13 +223,13 @@ function attachCoordinator(session: DevSession, env: NodeJS.ProcessEnv): () => v
 
   void connectGate({
     t: 'hello', v: PROTOCOL_VERSION,
-    app: { id: identity.id, name: identity.name, cwd: appDir, publicPort, pid: process.pid, pinned: config.pin },
+    app: { id: identity.id, name: identity.name, cwd: appDir, publicPort, pid: process.pid, pinned: config.pin, graceMs },
   }, home).then((c) => {
     if (detached) return c.close()
     client = c
     c.onCommand((m) => {
       if (m.t === 'sleep') {
-        if (m.reason === 'evicted' && !mayEvict()) return report()
+        if (m.reason === 'evicted' && !mayEvict()) return report(true)
         gate.sleep(m.reason).catch((err: unknown) => process.stderr.write(`napdev: could not sleep Next.js (${message(err)})\n`))
       } else if (m.t === 'wake') {
         gate.resetFailures()

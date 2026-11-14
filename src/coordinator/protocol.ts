@@ -18,6 +18,8 @@ export function socketPathUsable(path: string): boolean {
 
 export interface AppView {
   id: string; name: string; cwd: string; publicPort: number; pid: number; pinned: boolean
+  /** the gate's own grace period; the policy judges each app by it */
+  graceMs: number
   state: GateState; inFlight: number; lastHttpAt: number | null
   /** max(lastHttpAt, when the current child became ready): what the policy's age and grace use */
   lastActiveAt: number | null
@@ -25,7 +27,9 @@ export interface AppView {
 }
 
 export type GateMsg = { t: 'hello'; v: number; app: Omit<AppView, 'state' | 'inFlight' | 'lastHttpAt' | 'lastActiveAt' | 'rssBytes'> }
-  | { t: 'report'; state: GateState; inFlight: number; lastHttpAt: number | null; lastActiveAt: number | null; rssBytes: number }
+  | { t: 'report'; state: GateState; inFlight: number; lastHttpAt: number | null; lastActiveAt: number | null; rssBytes: number
+      /** set on the report that answers an eviction the gate refused */
+      refused?: true }
 /** `welcome` acknowledges a hello of the same version; a gate counts as connected only after it. */
 export type CoordMsg = { t: 'sleep'; reason: 'evicted' | 'manual' } | { t: 'wake' } | { t: 'reject'; reason: 'version' }
   | { t: 'welcome'; v: number }
