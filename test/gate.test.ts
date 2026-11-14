@@ -273,4 +273,58 @@ describe('Gate', () => {
     expect(deps.onError).toHaveBeenCalledWith(boom, 'on-change')
     expect(g.snapshot().state).toBe('awake')
   })
+
+  it('ensureAwake in the same tick as sleep waits for the stop and wakes fresh', async () => {
+    const second = fakeChild(4200, 222)
+    deps.startChild.mockResolvedValueOnce(child.handle).mockResolvedValueOnce(second.handle)
+    await g.ensureAwake()
+    const sleeping = g.sleep('manual')
+    const p = g.ensureAwake()
+    await sleeping
+    expect(await p).toBe(4200)
+    expect(deps.stopChild).toHaveBeenCalledWith(child.handle)
+  })
+
+  it('shares one stray retry between concurrent sleeps and never stops a stray twice at once', async () => {
+    let resolve!: (c: ChildHandle) => void
+    deps.startChild.mockReturnValue(new Promise((r) => { resolve = r }))
+    const p = g.ensureAwake().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(120_000); await p
+    deps.stopChild.mockRejectedValueOnce(new Error('survived'))
+    resolve(child.handle); await vi.advanceTimersByTimeAsync(0)
+    expect(g.snapshot().strays).toBe(1)
+    deps.stopChild.mockClear(); deps.onError.mockClear()
+    let finish!: () => void
+    deps.stopChild.mockReturnValueOnce(new Promise<void>((r) => { finish = r }))
+    const a = g.sleep('exit'); const b = g.sleep('exit')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(deps.stopChild).toHaveBeenCalledTimes(1)
+    finish(); await Promise.all([a, b])
+    expect(g.snapshot().strays).toBe(0); expect(deps.onError).not.toHaveBeenCalled()
+  })
+
+  it('a synchronously throwing stopChild rejects sleep and does not wedge ensureAwake', async () => {
+    await g.ensureAwake()
+    deps.stopChild.mockImplementationOnce(() => { throw new Error('sync boom') })
+    await expect(g.sleep('manual')).rejects.toThrow('sync boom')
+    expect(g.snapshot().state).toBe('awake')
+    expect(await g.ensureAwake()).toBe(4100)
+    await g.sleep('manual'); expect(g.snapshot().state).toBe('asleep')
+  })
+
+  it('sleep() during waking resolves after wakeTimeoutMs when the start ignores the abort', async () => {
+    let resolveStart!: (c: ChildHandle) => void
+    deps.startChild.mockReturnValue(new Promise((r) => { resolveStart = r }))
+    const p = g.ensureAwake().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    let done = false
+    const sleeping = g.sleep('evicted').then(() => { done = true })
+    await vi.advanceTimersByTimeAsync(119_999); expect(done).toBe(false)
+    await vi.advanceTimersByTimeAsync(1); await sleeping
+    expect(done).toBe(true); expect(g.snapshot().strays).toBe(0)
+    deps.stopChild.mockRejectedValueOnce(new Error('survived'))
+    resolveStart(child.handle); await vi.advanceTimersByTimeAsync(0); await p
+    expect(g.snapshot().strays).toBe(1)
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

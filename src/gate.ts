@@ -52,6 +52,7 @@ export class Gate {
   private wake: Wake | null = null
   private sleeping: Promise<void> | null = null
   private strays = new Set<ChildHandle>()
+  private strayRetry: Promise<void> | null = null
   private idleTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: GateDeps) {}
@@ -92,8 +93,18 @@ export class Gate {
     }
   }
 
-  private async retryStrays(): Promise<void> {
-    for (const handle of [...this.strays]) await this.stopStray(handle)
+  private retryStrays(): Promise<void> {
+    if (this.strayRetry) return this.strayRetry
+    if (this.strays.size === 0) return Promise.resolve()
+    const run = (async () => {
+      try {
+        for (const handle of [...this.strays]) await this.stopStray(handle)
+      } finally {
+        this.strayRetry = null
+      }
+    })()
+    this.strayRetry = run
+    return run
   }
 
   // --- activity -----------------------------------------------------------
@@ -222,9 +233,11 @@ export class Gate {
 
   // --- sleeping -----------------------------------------------------------
 
-  async sleep(reason: SleepReason): Promise<void> {
-    await this.retryStrays()
-    return this.sleepOnce(reason)
+  sleep(reason: SleepReason): Promise<void> {
+    // sleepOnce flips the sleeping/waking state synchronously; strays are retried alongside it
+    const main = this.sleepOnce(reason)
+    const strays = this.retryStrays()
+    return Promise.all([main, strays]).then(() => undefined)
   }
 
   private async sleepOnce(reason: SleepReason): Promise<void> {
@@ -238,7 +251,12 @@ export class Gate {
       this.state = 'asleep'
       this.emit(reason)
       wake.reject(new WakeFailedError(`wake aborted (${reason})`))
-      await wake.started
+      let bound: NodeJS.Timeout | undefined
+      await Promise.race([
+        wake.started,
+        new Promise<void>((r) => { bound = setTimeout(r, this.deps.config.wakeTimeoutMs) }),
+      ])
+      clearTimeout(bound)
       return
     }
     if (this.sleeping) return this.sleeping
@@ -246,7 +264,7 @@ export class Gate {
     this.stopping = handle
     this.sleeping = (async () => {
       try {
-        await this.deps.stopChild(handle)
+        await Promise.resolve().then(() => this.deps.stopChild(handle))
       } catch (err) {
         this.stopping = null
         throw err
