@@ -11,7 +11,7 @@ const SKIP = new Set(['node_modules', '.git', '.next', 'dist'])
 
 /** Replace each bare `next dev` not already preceded by `napdev ` with `napdev next dev`. */
 export function rewriteScript(script: string): string {
-  return script.replace(/(^|\s|&&|;|\||\(|--)next dev(?=$|\s)/g, (m, pre: string, offset: number) => {
+  return script.replace(/(^|\s|&&|;|\||\(|--)next dev(?=$|[\s;&|)])/g, (m, pre: string, offset: number) => {
     if (pre === '' || /\s/.test(pre)) {
       if (script.slice(0, offset + pre.length).endsWith('napdev ')) return m
     }
@@ -158,22 +158,33 @@ function editPackage(text: string, version: string): string | null {
 
 // ---- workspace discovery -------------------------------------------------------------------------
 
-/** The `packages:` list of pnpm-workspace.yaml; everything else in the file is ignored. */
-function pnpmPackages(yaml: string): string[] {
+/** The `packages:` list of pnpm-workspace.yaml (block or one-line flow form); null when it cannot be read. */
+function pnpmPackages(yaml: string): string[] | null {
+  const unquote = (v: string): string => (/^(['"]).*\1$/.test(v) ? v.slice(1, -1) : v)
   const out: string[] = []
   let inList = false
   for (const raw of yaml.split(/\r?\n/)) {
     const line = raw.replace(/(^|\s)#.*$/, '')
     if (!line.trim()) continue
-    if (/^\S/.test(line)) {
-      inList = /^packages\s*:/.test(line)
+    const isItem = /^\s*-(\s|$)/.test(line)
+    if (!isItem && /^\S/.test(line)) {
+      const key = /^packages\s*:(.*)$/.exec(line)
+      inList = key !== null
+      if (key) {
+        const rest = key[1]!.trim()
+        if (rest === '') continue
+        const flow = /^\[(.*)\]$/.exec(rest)
+        if (!flow) return null
+        for (const part of flow[1]!.split(',')) {
+          const v = unquote(part.trim())
+          if (v) out.push(v)
+        }
+        inList = false
+      }
       continue
     }
-    if (!inList) continue
-    const m = /^\s*-\s+(.*?)\s*$/.exec(line)
-    if (!m) continue
-    let v = m[1]!
-    if (/^(['"]).*\1$/.test(v)) v = v.slice(1, -1)
+    if (!inList || !isItem) continue
+    const v = unquote(/^\s*-\s*(.*?)\s*$/.exec(line)![1]!)
     if (v) out.push(v)
   }
   return out
@@ -228,8 +239,10 @@ async function expand(root: string, pattern: string): Promise<string[]> {
 async function workspaceDirs(root: string): Promise<string[]> {
   let patterns: string[] | null = null
   const yamlPath = join(root, 'pnpm-workspace.yaml')
-  if (existsSync(yamlPath)) patterns = pnpmPackages(await readFile(yamlPath, 'utf8'))
-  else {
+  if (existsSync(yamlPath)) {
+    patterns = pnpmPackages(await readFile(yamlPath, 'utf8'))
+    if (patterns === null) throw new Error('could not read packages from pnpm-workspace.yaml')
+  } else {
     try {
       const w = (JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as { workspaces?: unknown }).workspaces
       if (Array.isArray(w)) patterns = w.filter((x): x is string => typeof x === 'string')
@@ -309,7 +322,13 @@ export async function runInit(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
     process.stderr.write('usage: napdev init [--yes]\n')
     return 1
   }
-  const changes = await planInit(cwd, ownVersion())
+  let changes: InitChange[]
+  try {
+    changes = await planInit(cwd, ownVersion())
+  } catch (err) {
+    process.stderr.write(`napdev: ${(err as Error).message}\n`)
+    return 1
+  }
   if (changes.length === 0) {
     process.stdout.write('Nothing to change.\n')
     return 0

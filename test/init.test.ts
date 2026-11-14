@@ -40,6 +40,10 @@ describe('rewriteScript', () => {
     expect(rewriteScript('next dev')).toBe('napdev next dev')
     expect(rewriteScript('next dev -p 3001')).toBe('napdev next dev -p 3001')
     expect(rewriteScript('a &&next dev ; b |next dev')).toBe('a &&napdev next dev ; b |napdev next dev')
+    expect(rewriteScript('next dev;echo x')).toBe('napdev next dev;echo x')
+    expect(rewriteScript('(next dev)')).toBe('(napdev next dev)')
+    expect(rewriteScript('next dev&&x')).toBe('napdev next dev&&x')
+    expect(rewriteScript('next dev|tee log')).toBe('napdev next dev|tee log')
     expect(rewriteScript('(next dev )')).toBe('(napdev next dev )')
     expect(rewriteScript('x -- next dev')).toBe('x -- napdev next dev')
     expect(rewriteScript('x --next dev')).toBe('x --napdev next dev')
@@ -76,6 +80,21 @@ describe('planInit', () => {
     const changes = await planInit(root, '0.1.0')
     expect(files(changes)).toEqual(['apps/blog/package.json', 'apps/web/package.json'])
     expect(files(changes)).not.toContain('packages/ui/package.json')
+  })
+
+  it('reads column-0 and flow-style package lists', async () => {
+    for (const yaml of ['packages:\n- "apps/*"\n', "packages: ['apps/*', packages/x]\n", 'packages: [apps/*]\nother: 1\n']) {
+      const root = make({ 'pnpm-workspace.yaml': yaml, 'apps/web/package.json': next('web') })
+      expect(files(await planInit(root, '0.1.0'))).toEqual(['apps/web/package.json'])
+    }
+  })
+
+  it('fails loudly on an unreadable packages value', async () => {
+    const root = make({ 'pnpm-workspace.yaml': 'packages: *anchor\n', 'apps/web/package.json': next('web') })
+    await expect(planInit(root, '0.1.0')).rejects.toThrow('could not read packages from pnpm-workspace.yaml')
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    expect(await runInit([], {}, root)).toBe(1)
+    expect(String(err.mock.calls[0]![0])).toBe('napdev: could not read packages from pnpm-workspace.yaml\n')
   })
 
   it('finds apps through npm workspaces (array and {packages})', async () => {
