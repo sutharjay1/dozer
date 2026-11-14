@@ -5,12 +5,13 @@ description: Add dozer to a Next.js app, start it asleep, watch the first reques
 
 ## Install
 
-dozer is not published to npm yet, so there is no public install command today. Once it is published it will be a dev dependency of each Next.js app (`pnpm add -D dozer`).
-
-If you have a checkout of the source, build it (`pnpm install && pnpm build`) and add it from disk:
+Add dozer to each Next.js app as a dev dependency. The npm package is `next-dozer`; the command it installs is `dozer`.
 
 ```sh
-pnpm add -D file:/path/to/dozer
+pnpm add -D next-dozer
+# npm i -D next-dozer
+# yarn add -D next-dozer
+# bun add -d next-dozer
 ```
 
 ## Change the dev script
@@ -33,7 +34,7 @@ Then apply it:
 dozer init --yes
 ```
 
-`init` also adds `"dozer": "^<version>"` to the dev dependencies. That entry only installs once dozer is on npm, so until then change it to `file:/path/to/dozer`.
+`init` also adds `"next-dozer": "^<version>"` to the dev dependencies; run your package manager's install afterwards.
 
 ## Start it
 

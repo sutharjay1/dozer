@@ -10,6 +10,8 @@ export default defineConfig({
   // Plain text wordmark; there is no logo mark.
   logo: { text: "dozer" },
 
+  github: { owner: "sutharjay1", repo: "dozer", dir: "website" },
+
   theme: {
     // orange-600 in light mode, orange-500 in dark mode; the only accent.
     accent: { light: "#ea580c", dark: "#f97316" },

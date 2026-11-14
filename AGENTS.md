@@ -24,3 +24,12 @@ All three of typecheck, test and build must pass before a commit lands on `main`
   environment, never in git.
 - Read `git status` before every commit; never `git add -A` blindly.
 - Commit messages say what changed. No attribution lines, no tracker references.
+
+## Release
+
+The npm package is `next-dozer`; the command is `dozer`.
+
+1. Bump `version` in `package.json`.
+2. `pnpm publish --access public` (`prepublishOnly` runs typecheck, test and build first).
+3. Tag it: `git tag v<version>`.
+4. Push the tag: `git push origin v<version>`.

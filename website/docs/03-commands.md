@@ -74,4 +74,4 @@ Awake: shop/web @ main
 dozer init [--yes]
 ```
 
-Finds the Next.js apps in the workspace and puts `dozer` in front of `next dev` in their dev scripts. Without `--yes` it prints the diff and changes nothing. With `--yes` it writes the files; run your package manager's install afterwards. It adds `"dozer": "^<version>"` as a dev dependency, which only installs once dozer is published to npm.
+Finds the Next.js apps in the workspace and puts `dozer` in front of `next dev` in their dev scripts. Without `--yes` it prints the diff and changes nothing. With `--yes` it writes the files; run your package manager's install afterwards. It adds `"next-dozer": "^<version>"` as a dev dependency unless the app already has it.
