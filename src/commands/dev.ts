@@ -1,0 +1,196 @@
+import { mkdirSync } from 'node:fs'
+import type http from 'node:http'
+import { parseDevArgs, type DevArgs } from '../args.js'
+import { resolveNextBin, type ChildHandle } from '../child.js'
+import { loadAppConfig, napdevHome, type AppConfig } from '../config.js'
+import { Gate, type GateSnapshot, type GateState, type SleepReason } from '../gate.js'
+import { identify, type Identity } from '../identity.js'
+import { createChildLauncher } from '../launch.js'
+import { createLogRewriter, LogTail, type LogRewriter } from '../logs.js'
+import { runNext } from '../passthrough.js'
+import { PortTakenError, resolvePublicPort } from '../port.js'
+import { createGateServer, listenPublic } from '../proxy.js'
+import { SocketHub } from '../sockets.js'
+
+const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
+const PARENT_POLL_MS = 2_000
+
+export type GateListener = (snapshot: GateSnapshot, reason?: SleepReason) => void
+
+/** A running `napdev next dev`: the public port is bound and Next is asleep until a request. */
+export interface DevSession {
+  appDir: string
+  home: string
+  config: AppConfig
+  identity: Identity
+  publicPort: number
+  gate: Gate
+  /** Adds a listener for every gate change; returns a function that removes it. */
+  onGateChange(listener: GateListener): () => void
+  /** Process groups of every Next child that has not exited yet (awake, waking or being stopped). */
+  childPids(): number[]
+  /** Stops Next (verified dead) and closes the public port. Rejects if the tree survived. */
+  close(): Promise<void>
+}
+
+// What start-up got through before it failed, for the plain `next dev` fallback.
+interface Progress { args?: DevArgs; nextBin?: string; publicPort?: number }
+
+async function startDev(argv: string[], env: NodeJS.ProcessEnv, appDir: string, p: Progress): Promise<DevSession> {
+  const args = p.args = parseDevArgs(argv, env)
+  const config = loadAppConfig(appDir, env)
+  const home = napdevHome(env)
+  mkdirSync(home, { recursive: true })
+  const nextBin = p.nextBin = resolveNextBin(appDir, env)
+  const identity = await identify(appDir)
+  const publicPort = p.publicPort = await resolvePublicPort(args)
+
+  const tail = new LogTail()
+  const rewriters = new Map<number, LogRewriter>()
+  const live = new Set<number>()
+  const emit = (text: string) => {
+    if (!text) return
+    process.stdout.write(text)
+    tail.push(text)
+  }
+  const launcher = createChildLauncher({
+    nextBin, cwd: appDir, env, passthrough: args.passthrough, publicPort,
+    onSpawn: (child: ChildHandle) => {
+      const rw = createLogRewriter(child.hiddenPort, publicPort)
+      rewriters.set(child.hiddenPort, rw)
+      live.add(child.pid)
+      void child.exited.then(() => {
+        live.delete(child.pid)
+        if (rewriters.get(child.hiddenPort) === rw) rewriters.delete(child.hiddenPort)
+        emit(rw.flush())
+      })
+    },
+    onOutput: (text, hiddenPort) => {
+      const rw = rewriters.get(hiddenPort)
+      emit(rw ? rw(text) : text)
+    },
+  })
+
+  const listeners = new Set<GateListener>()
+  let sockets: SocketHub | null = null
+  let last: GateState = 'asleep'
+  const gate = new Gate({
+    config,
+    startChild: (signal) => launcher.startChild(signal),
+    stopChild: (child) => launcher.stopChild(child),
+    onChange: (snap, reason) => {
+      if (snap.state !== last) {
+        last = snap.state
+        if (snap.state === 'awake') sockets!.onWake(snap.hiddenPort!)
+        else if (snap.state === 'asleep') sockets!.onSleep()
+      }
+      for (const l of listeners) l(snap, reason)
+    },
+  })
+  const hub = sockets = new SocketHub(gate)
+  const server = createGateServer({ gate, sockets: hub, tail })
+  try {
+    await listenPublic(server, publicPort, args.hostname)
+  } catch (err) {
+    // lost a race for the port after it was found free
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') throw new PortTakenError(publicPort)
+    throw err
+  }
+
+  return {
+    appDir, home, config, identity, publicPort, gate,
+    onGateChange(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    childPids: () => [...live],
+    async close() {
+      try {
+        await gate.sleep('exit')
+        const left = gate.snapshot()
+        if (left.childPid !== null || left.strays > 0) {
+          throw new Error(`${left.strays || 1} Next.js process tree(s) still running`)
+        }
+      } finally {
+        await hub.close()
+        await closeServer(server)
+      }
+    },
+  }
+}
+
+function closeServer(server: http.Server): Promise<void> {
+  server.closeAllConnections()
+  return new Promise((resolve) => server.close(() => resolve()))
+}
+
+function hasPortFlag(argv: string[]): boolean {
+  return argv.some((a) => a === '-p' || a === '--port' || a.startsWith('--port='))
+}
+
+async function fallback(err: unknown, argv: string[], env: NodeJS.ProcessEnv, appDir: string, p: Progress): Promise<number> {
+  let nextBin = p.nextBin
+  if (!nextBin) {
+    try {
+      nextBin = resolveNextBin(appDir, env)
+    } catch {
+      process.stderr.write(`napdev: could not find next in ${appDir}\n`)
+      return 1
+    }
+  }
+  process.stderr.write(`napdev: could not start (${(err as Error)?.message ?? String(err)}); running next dev directly\n`)
+  const args = ['dev', ...argv]
+  if (p.args && !hasPortFlag(argv)) args.push('--port', String(p.publicPort ?? p.args.publicPort))
+  return runNext(nextBin, args, appDir, env)
+}
+
+/**
+ * Prints the ready line, waits for a signal or a parent change, then shuts the session down.
+ * Resolves the exit code.
+ */
+function serve(session: DevSession, ready: () => void): Promise<number> {
+  return new Promise((resolve) => {
+    const parent = process.ppid
+    let stopping = false
+    const finish = (code: number) => {
+      clearInterval(poll)
+      for (const sig of SIGNALS) process.off(sig, onSignal)
+      resolve(code)
+    }
+    const shutdown = () => {
+      stopping = true
+      session.close().then(() => finish(0), (err: unknown) => {
+        process.stderr.write(`napdev: could not stop Next.js (${(err as Error)?.message ?? String(err)})\n`)
+        finish(1)
+      })
+    }
+    const onSignal = () => {
+      if (!stopping) return shutdown()
+      // second signal: do not wait for a graceful stop
+      for (const pid of session.childPids()) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
+      finish(130)
+    }
+    for (const sig of SIGNALS) process.on(sig, onSignal)
+    const poll = setInterval(() => { if (!stopping && process.ppid !== parent) shutdown() }, PARENT_POLL_MS)
+    poll.unref()
+    ready() // only now: whoever reads the line may signal at once
+  })
+}
+
+export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
+  const progress: Progress = {}
+  let session: DevSession
+  try {
+    session = await startDev(argv, env, cwd, progress)
+  } catch (err) {
+    if (err instanceof PortTakenError) {
+      process.stderr.write(`Port ${err.port} is already in use\n`)
+      return 1
+    }
+    return fallback(err, argv, env, cwd, progress)
+  }
+  if (env.NAPDEV_DEBUG === '1') process.stderr.write(`napdev: identity ${JSON.stringify(session.identity)}\n`)
+  return serve(session, () => {
+    process.stdout.write(`napdev listening on http://localhost:${session.publicPort} (Next.js asleep; starts on first request)\n`)
+  })
+}
