@@ -1,0 +1,84 @@
+/* dozer README hero. Kept from dark-hero: a near-black stage, the window inset
+   top and left and run off the right and bottom, depth from a lighter surface
+   and a hairline rather than a glow. Changed: terminal chrome, mono at a size
+   that survives being scaled to a README column, one orange accent. */
+.dz {
+  & .ss-stage {
+    --gutter: 56px;
+    --dz-accent: #f97316; /* orange-500 on dark */
+    overflow: hidden;
+    /* Square: the PNG is exported opaque, and rounded corners would be
+       painted with the capture page's white, which shows on GitHub dark */
+    border-radius: 0;
+    background: #0a0a0b;
+  }
+
+  /* Inset one gutter top and left; off the right (only the window's empty
+     margin is cut) and off the bottom, past the last prompt by a full gutter */
+  .dz-win {
+    position: absolute;
+    top: var(--gutter);
+    left: var(--gutter);
+    width: 1120px;
+    height: 520px;
+    --ss-term-bg: #161618;
+    /* Near-monochrome: the prompt is gray, not the kit's blue and green */
+    --ss-term-path: #8b8b94;
+    --ss-term-sigil: #8b8b94;
+    --ss-term-dim: #6b6b74;
+  }
+
+  .dz-win .ss-term__title {
+    font-size: 13px;
+  }
+
+  /* README columns show this at about 0.8x: 16px mono lands near 13px.
+     Menlo after SF Mono: a bundled Chromium can't see SF Mono by name */
+  .dz-term {
+    gap: 4px;
+    padding: 10px 28px 28px;
+    color: #a1a1aa;
+    font-family: "SF Mono", Menlo, ui-monospace, monospace;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .dz-term > * + .ss-term__prompt {
+    margin-top: 18px;
+  }
+
+  .dz-ready {
+    color: #d4d4d8;
+  }
+
+  .dz-table {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
+  }
+
+  .dz-tr {
+    white-space: pre;
+  }
+
+  .dz-tr[data-kind='head'] {
+    color: #71717a;
+  }
+
+  .dz-tr[data-kind='awake'] {
+    color: #f4f4f5;
+  }
+
+  .dz-tr[data-kind='asleep'] {
+    color: #8b8b94;
+  }
+
+  .dz-td[data-awake] {
+    color: var(--dz-accent);
+  }
+
+  .dz-term .ss-term__caret {
+    background: #d4d4d8;
+  }
+}

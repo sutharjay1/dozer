@@ -1,0 +1,151 @@
+/* dozer before/after. Kept from static-card: the stage is a light well with a
+   rounded mask, one gutter for every edge, white cards with the hero shadow.
+   Changed: one card split into two equal columns, bars instead of a list, one orange
+   figure (the saving). The well is opaque, so the PNG holds on white and on
+   GitHub's #0d1117. */
+.dm {
+  & .ss-stage {
+    --gutter: 32px;
+    --dm-accent: #ea580c;
+    --dm-mono: "SF Mono", Menlo, ui-monospace, monospace;
+    overflow: hidden;
+    /* Square: the PNG is exported opaque, and rounded corners would be
+       painted with the capture page's white, which shows on GitHub dark */
+    border-radius: 0;
+    background: #f1f1ef;
+  }
+
+  .dm-pair {
+    position: absolute;
+    top: var(--gutter);
+    left: var(--gutter);
+    right: var(--gutter);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: var(--ss-shadow-hero);
+  }
+
+  /* One surface, two columns: a pair of floating cards read as two objects
+     and broke the one-gutter frame; a shared card with a rule reads as one
+     comparison */
+  .dm-card {
+    display: flex;
+    flex-direction: column;
+    padding: 24px 28px 22px;
+  }
+
+  .dm-card + .dm-card {
+    border-left: 1px solid #ececea;
+  }
+
+  .dm-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .dm-cmd {
+    color: #18181b;
+    font: 600 16px/1.3 var(--dm-mono);
+  }
+
+  .dm-note {
+    color: #71717a;
+    font-size: 14px;
+  }
+
+  .dm-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .dm-line {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 7px;
+  }
+
+  .dm-name {
+    color: #27272a;
+    font: 13.5px/1.3 var(--dm-mono);
+  }
+
+  .dm-state {
+    color: #a1a1aa;
+    font-size: 13.5px;
+  }
+
+  .dm-val {
+    color: #27272a;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dm-row[data-state='asleep'] .dm-name,
+  .dm-row[data-state='asleep'] .dm-val {
+    color: #71717a;
+  }
+
+  .dm-track {
+    height: 10px;
+    border-radius: 5px;
+    background: #f0f0ee;
+  }
+
+  .dm-bar {
+    height: 100%;
+    border-radius: 5px;
+    background: #3f3f46;
+  }
+
+  .dm-row[data-state='asleep'] .dm-bar {
+    background: #b4b4bb;
+  }
+
+  .dm-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid #ececea;
+  }
+
+  .dm-total__label {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    color: #52525b;
+    font-size: 14px;
+  }
+
+  .dm-total__extra {
+    color: #8b8b94;
+    font-size: 13.5px;
+  }
+
+  .dm-total__val {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    color: #18181b;
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .dm-saved {
+    color: var(--dm-accent);
+    font-size: 14px;
+    font-weight: 600;
+  }
+}

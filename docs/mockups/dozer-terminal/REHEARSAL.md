@@ -1,0 +1,9 @@
+# Rehearsal: dozer-terminal (README hero, still)
+Gold: dark-hero. Kept: near-black stage, one window inset one gutter top and left and run off the right and bottom, depth from a lighter surface plus hairline, one lit color. Changed: kit `chrome="terminal"` window (grey lights) instead of a browser app, all content is a real terminal session, accent is orange (#f97316) on the word "awake" only, prompt path and sigil recolored gray (kit defaults are blue/green), mono 16px (Menlo; Geist Mono is not in the kit, SF Mono is invisible to the bundled Chromium), stage corners square so the opaque PNG has no white corners on GitHub dark.
+Beats: none, a still. Story: `pnpm dev` -> `> dozer next dev` -> the exact ready line; `dozer status` -> table, 1 awake (shop/web @ main, 563 MB, 12s ago) then 3 asleep sorted by name; fresh prompt with caret.
+Captured: 1100 wide at 2x (still + gate sheet); 390 wide still; PNG composited on #fff and #0d1117.
+Film: gate -> `rehearsal passed`, no findings at 1100. At 390: "shrunk, not laid out for the phone" and "small text" -> stands: this ships as a README PNG, not a live stage; no compact design (the 82-char ready line and the 5-column table can't be set at a readable size in 358px without wrapping dozer's exact output).
+Review (fresh-eye, self, against dark-hero side by side): eye lands on orange "awake" then the white awake row: yes. One object leads: yes. Real strings: 3 commands/lines + table only. No logos, sparkles, purple. Empty right half of the terminal is the window's own margin, cut by the stage.
+Assumptions: ports 3000-3003 per checkout and LAST REQUEST values are illustrative; RSS 563 MB is the measured test-app figure. `> dozer next dev` is pnpm's script echo.
+Unresolved: no compact variant.
+Not checked: Safari/Firefox rendering of the PNG; actual GitHub page render (simulated on #fff/#0d1117 only); Geist Mono.
