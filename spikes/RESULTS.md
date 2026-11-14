@@ -1,0 +1,40 @@
+# Spike: websocket hold across sleep and wake
+
+Versions: next 15.5.29, next 16.4.6, react/react-dom 19.3.1, typescript 5.9 (TS 7 breaks Next 15), ws 8.23.0, playwright 1.65.1 (Chromium headless shell). Ports 4000 proxy / 4001 upstream (both were free).
+
+Method (`ws-hold/proxy.mjs`, `ws-hold/run.mjs`): load a page through the proxy, SIGUSR1 (kill upstream tree, keep browser sockets open and silent), hold 180 s, assert zero proxy HTTP requests and zero full page loads (Playwright `load` events); SIGUSR2 (restart upstream, close held sockets with 1012), assert exactly one reload within the following 20 s; edit the route source and assert the new text appears.
+Note: `framenavigated` fires twice per load (and on history updates), so full loads are counted with the page `load` event.
+
+## Results, brief behavior (wake = close held sockets with 1012)
+
+| Next | bundler | router | result |
+|---|---|---|---|
+| 15.5.29 | webpack | app | FAIL: 0 reloads after wake; edit not reflected |
+| 15.5.29 | webpack | pages | PASS |
+| 15.5.29 | turbopack (`--turbopack`) | app | FAIL: 0 reloads after wake; edit not reflected |
+| 15.5.29 | turbopack (`--turbopack`) | pages | PASS |
+| 16.4.6 | turbopack (default) | app | PASS |
+| 16.4.6 | turbopack (default) | pages | PASS |
+| 16.4.6 | webpack (`--webpack`) | app | PASS |
+| 16.4.6 | webpack (`--webpack`) | pages | PASS |
+
+The hold half passes in all 8 rows: 0 HTTP requests, 0 navigations, 0 new upgrades during 180 s (the client stayed silent; webpack clients keep sending 2.5 s pings, which the proxy drops).
+
+## Variant: wake also sends `{"action":"reloadPage","type":"reloadPage"}` before closing (`WAKE_MODE=both`)
+
+| Next | bundler | router | result |
+|---|---|---|---|
+| 15.5.29 | webpack | app | PASS (1 reload, edit applied) |
+| 15.5.29 | turbopack | app | PASS (1 reload, edit applied) |
+
+## Where the spec's websocket rule is wrong or incomplete
+
+- Next 15 app router: the client (`client/dev/hot-reloader/app/use-websocket.js`) opens `/_next/webpack-hmr` once and has no onclose/onerror handler. After a 1012 close it never reconnects, so it never reloads and HMR is dead for that tab. Observed: `WS close` then nothing for 80 s. Applies to both webpack and Turbopack in Next 15.
+- Next 15 pages router: reconnects after 1 s. Webpack: reload comes from the `sync` hash differing (client sends `client-full-reload`). Turbopack: `turbopack-connected` session id differs, then reload. Both reload exactly once.
+- Next 16 (all four rows): client reconnects after close (`/_next/hmr`, app router adds `?id=...`), gets a new session id / hash and reloads exactly once. In 16 webpack/app, reload happened on the reconnect `sync`/`built` flow without turbopack-connected.
+- Fix for Next 15 app: on wake the proxy additionally sends `{"action":"reloadPage"}` to each held socket (the client replies `client-reload-page` and calls `location.reload()`). Sending it is harmless for the other rows' clients but only the two Next 15 app rows were re-run with it.
+- HMR socket paths: Next 15 `/_next/webpack-hmr` (both bundlers, both routers); Next 16 `/_next/hmr` (app router adds `?id=`).
+
+## Gate
+
+Literal brief behavior: 6/8 PASS, Next 15 app-router rows FAIL, so by the brief's gate this is a stop-and-report. With the reloadPage addition on wake, all tested failing rows pass (8/8 effective), but that is a technique change the designer must accept. Other rows were not re-run with the variant.

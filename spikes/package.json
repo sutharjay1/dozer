@@ -1,0 +1,1 @@
+{"name":"napdev-spikes","private":true,"type":"module","dependencies":{"ws":"^8","playwright":"^1"}}

@@ -1,0 +1,3 @@
+node_modules/
+.next/
+ws-hold/results.json
