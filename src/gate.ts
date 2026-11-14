@@ -57,6 +57,11 @@ export class Gate {
 
   constructor(private readonly deps: GateDeps) {}
 
+  get config(): AppConfig { return this.deps.config }
+
+  /** True from the moment sleep() starts stopping the child until it is gone (before onChange fires). */
+  get sleepInProgress(): boolean { return this.sleeping !== null }
+
   private now(): number { return (this.deps.now ?? Date.now)() }
 
   snapshot(): GateSnapshot {

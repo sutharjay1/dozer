@@ -48,7 +48,11 @@ server.on('upgrade', (req, socket, head) => {
   const path = (req.url ?? '').split('?')[0]
   if (!HMR_PATHS.has(path)) return socket.destroy()
   wss.handleUpgrade(req, socket, head, (ws) => {
-    ws.send(JSON.stringify({ type: 'turbopack-connected', data: { sessionId } }))
+    const { host, origin, cookie } = req.headers
+    const protocol = req.headers['sec-websocket-protocol']
+    ws.send(JSON.stringify({ type: 'turbopack-connected', data: { sessionId, url: req.url, host, origin, cookie, protocol } }))
+    // binary frames are echoed back unchanged; text frames are ignored
+    ws.on('message', (data, isBinary) => { if (isBinary) ws.send(data, { binary: true }) })
   })
 })
 process.on('SIGUSR2', () => {
