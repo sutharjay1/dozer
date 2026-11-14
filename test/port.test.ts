@@ -46,7 +46,10 @@ describe('resolvePublicPort', () => {
   })
   it('not explicit moves up', async () => {
     const p = await findHiddenPort(); await occupy(p)
-    expect(await resolvePublicPort(args(p, false))).toBe(p + 1)
+    // p + 1 may be in use by another test file running in parallel
+    const got = await resolvePublicPort(args(p, false))
+    expect(got).toBeGreaterThan(p)
+    expect(got).toBeLessThanOrEqual(p + 10)
   })
   it('not explicit throws after 11 taken ports', async () => {
     const p = await findHiddenPort()
