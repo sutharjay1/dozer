@@ -31,8 +31,9 @@ function spawnDaemon(home: string): void {
   if (daemonSpawned) return
   daemonSpawned = true
   try {
+    // it outlives this gate: run it from the napdev home so it never pins an app's directory
     const child = spawn(process.execPath, [CLI_PATH, '__coordinator'], {
-      detached: true, stdio: 'ignore', env: { ...process.env, NAPDEV_HOME: home },
+      cwd: home, detached: true, stdio: 'ignore', env: { ...process.env, NAPDEV_HOME: home },
     })
     child.on('error', () => {})
     child.unref()

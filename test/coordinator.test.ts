@@ -1,6 +1,6 @@
 // Runs the built CLI and its real coordinator daemon (harness in test/helpers/coordinator.ts).
-import { spawn } from 'node:child_process'
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import net from 'node:net'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -17,6 +17,15 @@ describe('coordinator', { timeout: 30_000 }, () => {
       state: 'asleep', inFlight: 0, lastHttpAt: null, rssBytes: 0 })
     expect(statSync(socketPath(home)).mode & 0o777).toBe(0o600)
     expect(daemonPids()).toHaveLength(1)
+  })
+
+  it('the daemon runs from the napdev home, not the first app', async () => {
+    await startCli('a')
+    await registered(1)
+    const [pid] = daemonPids()
+    const cwd = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], { encoding: 'utf8' })
+      .split('\n').find((l) => l.startsWith('n'))!.slice(1)
+    expect(cwd).toBe(realpathSync(home))
   })
 
   it('sleeps the least recently used app when a second one wakes', async () => {
