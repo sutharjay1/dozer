@@ -69,3 +69,26 @@ Known untested: background-tab timer throttling (Playwright page stays foregroun
 ## Gate verdict: GO
 
 The proxy must send the reload frame `{"action":"reloadPage","type":"reloadPage"}` to every held socket first, then close it with 1012. With that, 8/8 rows pass on Next 15.5.29 and 16.4.6 (webpack and Turbopack, app and pages routers). Close-only does not work on Next 15 app router (client never reconnects). The designer has accepted this technique change (spec updated in 6e78ec2).
+
+## Spike 2: wake time
+
+Method (`wake-time/measure.mjs`): spawn `next dev` (own process group, `NEXT_TELEMETRY_DISABLED=1`, 127.0.0.1, free port), poll-connect and time spawn to first response byte of `GET /` (any status), kill the group, repeat 5 times. Run 1 is cold (`.next` deleted first); runs 2-5 are warm (`.next`, including Turbopack's disk cache, kept). Peak RSS is the max over 500 ms samples of the summed RSS of the process group. 16 GB macOS machine, Node 22.22.3.
+
+Apps:
+- Small: `spikes/apps/next16`, Next 16.4.6, minimal app.
+- Large: a copy of `softgen/platform` (Next 15.4.10, app router, 47 `page` files, MDX, Sentry; its `dev` script is `next dev --turbopack`). Installed with pnpm `--frozen-lockfile --ignore-scripts`, no `.env` (no placeholder values needed). `GET /` answers 200.
+
+| app | Next | bundler | cold (run 1) | warm median (runs 2-5) | status | peak RSS |
+|---|---|---|---|---|---|---|
+| next16 (small) | 16.4.6 | Turbopack (default) | 1.44 s | 0.99 s | 200 | 560-600 MB |
+| next16 (small) | 16.4.6 | webpack | 2.63 s | 2.65 s | 200 | 810-930 MB |
+| platform copy (large) | 15.4.10 | Turbopack (`--turbopack`) | 6.69 s | 5.79 s | 200 | 2.0-2.6 GB |
+| platform copy (large) | 15.4.10 | webpack (Next 15 default) | 14.63 s | 14.84 s | 200 | 2.5 GB |
+
+Warm runs, large Turbopack: 5.78, 5.81, 6.03, 5.76 s. Large webpack: 14.76, 14.53, 14.93, 14.94 s. Notes: webpack has no persistent cache in dev, so cold and warm match. An extra first-ever webpack cold run (single run, before the table runs) took 16.29 s. Cold vs warm differs little for Turbopack because the first request compiles only the `/` route.
+
+Caveats: `/` alone is compiled (other routes compile on demand later); `--ignore-scripts` skipped postinstall (e.g. native binaries fetched by scripts); Next 15.4 is not 16, but it is the largest app that compiled.
+
+## Gate (Task 2)
+
+Warm median on the large app is 5.79 s with the project's own bundler (Turbopack) and 14.84 s on webpack, both at or under 20 s: GO. Webpack on a large app leaves about 5 s headroom, so the hold-the-request timeout should not be set below ~30 s.
