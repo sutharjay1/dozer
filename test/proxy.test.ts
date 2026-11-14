@@ -104,16 +104,16 @@ describe('gate server', () => {
     expect(r.status).toBe(502)
     expect(r.headers.get('content-type')).toContain('text/plain')
     const text = await r.text()
-    expect(text.startsWith('napdev: Next.js could not start\n\n')).toBe(true)
+    expect(text.startsWith('dozer: Next.js could not start\n\n')).toBe(true)
     expect(text).toContain('fake-next: crashing on purpose')
-    expect(text.endsWith('\n\nRun with NAPDEV=0 to bypass napdev.\n')).toBe(true)
+    expect(text.endsWith('\n\nRun with DOZER=0 to bypass dozer.\n')).toBe(true)
   })
 
   it('returns 504 when Next does not start within the wake timeout', async () => {
     const { url } = await start({ FAKE_NEXT_START_DELAY_MS: '5000' }, { wakeTimeoutMs: 1_000 })
     const r = await fetch(url)
     expect(r.status).toBe(504)
-    expect(await r.text()).toBe('napdev: Next.js did not start within 1 s\n')
+    expect(await r.text()).toBe('dozer: Next.js did not start within 1 s\n')
   })
 
   it('returns 502 with the log tail when the upstream refuses after the wake', async () => {
@@ -131,7 +131,7 @@ describe('gate server', () => {
     try {
       const r = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`)
       expect(r.status).toBe(502)
-      expect(await r.text()).toBe('napdev: Next.js could not start\n\nnext: last words\n\nRun with NAPDEV=0 to bypass napdev.\n')
+      expect(await r.text()).toBe('dozer: Next.js could not start\n\nnext: last words\n\nRun with DOZER=0 to bypass dozer.\n')
       await vi.waitFor(() => expect(gate.noteHttpEnd).toHaveBeenCalledTimes(1))
       expect(gate.noteHttpStart).toHaveBeenCalledTimes(1)
     } finally {

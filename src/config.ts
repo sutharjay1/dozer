@@ -23,8 +23,8 @@ export function parseDuration(text: string): number {
   return Math.round(Number(m[1]) * UNITS[m[2]!]!)
 }
 
-export function napdevHome(env: NodeJS.ProcessEnv): string {
-  return env.NAPDEV_HOME || join(homedir(), '.napdev')
+export function dozerHome(env: NodeJS.ProcessEnv): string {
+  return env.DOZER_HOME || join(homedir(), '.dozer')
 }
 
 function readJson(file: string): Record<string, unknown> | null {
@@ -62,26 +62,26 @@ function positiveNumber(source: string, key: string, value: unknown, fallback: n
 
 export function loadAppConfig(appDir: string, env: NodeJS.ProcessEnv): AppConfig {
   const file = join(appDir, 'package.json')
-  const section = readJson(file)?.napdev
+  const section = readJson(file)?.dozer
   const cfg = (section && typeof section === 'object' ? section : {}) as Record<string, unknown>
-  const idle = env.NAPDEV_IDLE ?? cfg.idle
-  const wake = env.NAPDEV_WAKE_TIMEOUT ?? cfg.wakeTimeout
-  const src = env.NAPDEV_IDLE !== undefined ? 'NAPDEV_IDLE' : file
-  const wsrc = env.NAPDEV_WAKE_TIMEOUT !== undefined ? 'NAPDEV_WAKE_TIMEOUT' : file
+  const idle = env.DOZER_IDLE ?? cfg.idle
+  const wake = env.DOZER_WAKE_TIMEOUT ?? cfg.wakeTimeout
+  const src = env.DOZER_IDLE !== undefined ? 'DOZER_IDLE' : file
+  const wsrc = env.DOZER_WAKE_TIMEOUT !== undefined ? 'DOZER_WAKE_TIMEOUT' : file
   return {
     idleMs: duration(src, 'idle', idle, DEFAULTS.idleMs),
     wakeTimeoutMs: duration(wsrc, 'wakeTimeout', wake, DEFAULTS.wakeTimeoutMs),
-    pin: env.NAPDEV_PIN === '1' ? true : env.NAPDEV_PIN === '0' ? false : cfg.pin === true,
+    pin: env.DOZER_PIN === '1' ? true : env.DOZER_PIN === '0' ? false : cfg.pin === true,
   }
 }
 
 export function loadMachineConfig(home: string, env: NodeJS.ProcessEnv): MachineConfig {
   const file = join(home, 'config.json')
   const cfg = readJson(file) ?? {}
-  const maxAwake = positiveNumber(env.NAPDEV_MAX_AWAKE !== undefined ? 'NAPDEV_MAX_AWAKE' : file, 'maxAwake',
-    env.NAPDEV_MAX_AWAKE ?? cfg.maxAwake, DEFAULTS.maxAwake)
-  const budget = env.NAPDEV_MEMORY_BUDGET ?? cfg.memoryBudget
-  const gb = positiveNumber(env.NAPDEV_MEMORY_BUDGET !== undefined ? 'NAPDEV_MEMORY_BUDGET' : file, 'memoryBudget', budget, 0)
-  const graceMs = duration('NAPDEV_GRACE', 'grace', env.NAPDEV_GRACE, DEFAULTS.graceMs)
+  const maxAwake = positiveNumber(env.DOZER_MAX_AWAKE !== undefined ? 'DOZER_MAX_AWAKE' : file, 'maxAwake',
+    env.DOZER_MAX_AWAKE ?? cfg.maxAwake, DEFAULTS.maxAwake)
+  const budget = env.DOZER_MEMORY_BUDGET ?? cfg.memoryBudget
+  const gb = positiveNumber(env.DOZER_MEMORY_BUDGET !== undefined ? 'DOZER_MEMORY_BUDGET' : file, 'memoryBudget', budget, 0)
+  const graceMs = duration('DOZER_GRACE', 'grace', env.DOZER_GRACE, DEFAULTS.graceMs)
   return { maxAwake, memoryBudgetBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : null, graceMs }
 }

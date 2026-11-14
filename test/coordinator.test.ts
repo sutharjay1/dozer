@@ -11,7 +11,7 @@ import { alive, CLI, get, home, list, pgrep, registered, sleepMs, startCli, stat
 
 describe('coordinator', { timeout: 30_000 }, () => {
   it('registers every gate with its identity and an owner-only socket', async () => {
-    const a = await startCli('a', { NAPDEV_PIN: '1' })
+    const a = await startCli('a', { DOZER_PIN: '1' })
     const apps = await registered(1)
     expect(apps[0]).toMatchObject({ name: expect.stringContaining('a'), publicPort: a.port, pid: a.proc.pid, pinned: true,
       state: 'asleep', inFlight: 0, lastHttpAt: null, rssBytes: 0 })
@@ -19,7 +19,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
     expect(daemonPids()).toHaveLength(1)
   })
 
-  it('the daemon runs from the napdev home, not the first app', async () => {
+  it('the daemon runs from the dozer home, not the first app', async () => {
     await startCli('a')
     await registered(1)
     const [pid] = daemonPids()
@@ -80,7 +80,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
 
   it('each gate is judged by its own grace, so a long one does not stall the limit', async () => {
     // A starts the daemon, so the daemon's own default grace is A's 30 s
-    const a = await startCli('a', { NAPDEV_GRACE: '30s' })
+    const a = await startCli('a', { DOZER_GRACE: '30s' })
     await registered(1)
     const b = await startCli('b')
     const apps = await registered(2)
@@ -94,7 +94,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
 
   it('a refused eviction moves to the next app and is retried once its grace passes', async () => {
     const d = spawn(process.execPath, [CLI, '__coordinator'],
-      { env: { ...process.env, NAPDEV_HOME: home, NAPDEV_MAX_AWAKE: '1' }, stdio: 'ignore' })
+      { env: { ...process.env, DOZER_HOME: home, DOZER_MAX_AWAKE: '1' }, stdio: 'ignore' })
     d.unref()
     await vi.waitFor(() => expect(daemonPids()).toHaveLength(1))
     // two hand-driven gates: x is the oldest and refuses its first eviction
@@ -168,7 +168,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
     await sleepMs(5_500)
     expect(daemonPids()).toHaveLength(1) // a gate starts a daemon at most once
     // it registers again with the next coordinator (here started by hand, as a new gate would)
-    spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, NAPDEV_HOME: home }, stdio: 'ignore' }).unref()
+    spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, DOZER_HOME: home }, stdio: 'ignore' }).unref()
     await vi.waitFor(async () => expect(states(await list())).toEqual({ a: 'awake' }), { timeout: 12_000, interval: 200 })
     expect(daemonPids()).toHaveLength(2)
   })
@@ -190,7 +190,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
     const client = await connectGate({ t: 'hello', v: PROTOCOL_VERSION, app }, home)
     try {
       expect(client.connected).toBe(false)
-      const d = spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, NAPDEV_HOME: home }, stdio: 'ignore' })
+      const d = spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, DOZER_HOME: home }, stdio: 'ignore' })
       d.unref()
       await vi.waitFor(() => expect(daemonPids()).toHaveLength(1))
       await vi.waitFor(() => expect(client.connected).toBe(true), { timeout: 8_000, interval: 100 })
@@ -237,7 +237,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
   it('a second daemon exits at once when the socket is served', async () => {
     await startCli('a')
     await registered(1)
-    const second = spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, NAPDEV_HOME: home }, stdio: 'ignore' })
+    const second = spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, DOZER_HOME: home }, stdio: 'ignore' })
     const code = await new Promise((r) => second.once('exit', r))
     expect(code).toBe(0)
     expect(await registered(1)).toHaveLength(1)

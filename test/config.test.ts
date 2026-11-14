@@ -2,12 +2,12 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULTS, loadAppConfig, loadMachineConfig, napdevHome, parseDuration } from '../src/config.js'
+import { DEFAULTS, loadAppConfig, loadMachineConfig, dozerHome, parseDuration } from '../src/config.js'
 
-const tmp = () => mkdtempSync(join(tmpdir(), 'napdev-cfg-'))
-const appWith = (napdev: unknown) => {
+const tmp = () => mkdtempSync(join(tmpdir(), 'dozer-cfg-'))
+const appWith = (dozer: unknown) => {
   const d = tmp()
-  writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'x', napdev }))
+  writeFileSync(join(d, 'package.json'), JSON.stringify({ name: 'x', dozer }))
   return d
 }
 const homeWith = (cfg: unknown) => {
@@ -38,20 +38,20 @@ describe('defaults', () => {
 })
 
 describe('loadAppConfig', () => {
-  it('defaults when package.json has no napdev key or is missing', () => {
+  it('defaults when package.json has no dozer key or is missing', () => {
     expect(loadAppConfig(tmp(), {})).toEqual({ idleMs: 600_000, wakeTimeoutMs: 120_000, pin: false })
     expect(loadAppConfig(appWith(undefined), {})).toEqual({ idleMs: 600_000, wakeTimeoutMs: 120_000, pin: false })
   })
-  it('reads the napdev key', () => {
+  it('reads the dozer key', () => {
     expect(loadAppConfig(appWith({ idle: '2m', wakeTimeout: '30s', pin: true }), {}))
       .toEqual({ idleMs: 120_000, wakeTimeoutMs: 30_000, pin: true })
   })
   it('env wins', () => {
-    expect(loadAppConfig(appWith({ idle: '2m' }), { NAPDEV_IDLE: '30s' }).idleMs).toBe(30_000)
-    expect(loadAppConfig(tmp(), { NAPDEV_WAKE_TIMEOUT: '5s' }).wakeTimeoutMs).toBe(5_000)
-    expect(loadAppConfig(tmp(), { NAPDEV_PIN: '1' }).pin).toBe(true)
-    expect(loadAppConfig(appWith({ pin: true }), { NAPDEV_PIN: '0' }).pin).toBe(false)
-    expect(loadAppConfig(appWith({ pin: false }), { NAPDEV_PIN: '1' }).pin).toBe(true)
+    expect(loadAppConfig(appWith({ idle: '2m' }), { DOZER_IDLE: '30s' }).idleMs).toBe(30_000)
+    expect(loadAppConfig(tmp(), { DOZER_WAKE_TIMEOUT: '5s' }).wakeTimeoutMs).toBe(5_000)
+    expect(loadAppConfig(tmp(), { DOZER_PIN: '1' }).pin).toBe(true)
+    expect(loadAppConfig(appWith({ pin: true }), { DOZER_PIN: '0' }).pin).toBe(false)
+    expect(loadAppConfig(appWith({ pin: false }), { DOZER_PIN: '1' }).pin).toBe(true)
     expect(loadAppConfig(appWith({ pin: true }), {}).pin).toBe(true)
   })
   it('invalid duration names the key', () => {
@@ -73,12 +73,12 @@ describe('loadMachineConfig', () => {
     expect(loadMachineConfig(homeWith({ maxAwake: 4 }), {}).maxAwake).toBe(4)
   })
   it('env wins', () => {
-    expect(loadMachineConfig(homeWith({ maxAwake: 4, memoryBudget: 8 }), { NAPDEV_MAX_AWAKE: '1', NAPDEV_MEMORY_BUDGET: '2' }))
+    expect(loadMachineConfig(homeWith({ maxAwake: 4, memoryBudget: 8 }), { DOZER_MAX_AWAKE: '1', DOZER_MEMORY_BUDGET: '2' }))
       .toEqual({ maxAwake: 1, memoryBudgetBytes: 2 * 1024 ** 3, graceMs: 60_000 })
   })
-  it('NAPDEV_GRACE overrides the grace period', () => {
-    expect(loadMachineConfig(tmp(), { NAPDEV_GRACE: '1s' }).graceMs).toBe(1_000)
-    expect(() => loadMachineConfig(tmp(), { NAPDEV_GRACE: 'soon' })).toThrow(/NAPDEV_GRACE/)
+  it('DOZER_GRACE overrides the grace period', () => {
+    expect(loadMachineConfig(tmp(), { DOZER_GRACE: '1s' }).graceMs).toBe(1_000)
+    expect(() => loadMachineConfig(tmp(), { DOZER_GRACE: 'soon' })).toThrow(/DOZER_GRACE/)
   })
   it('invalid JSON names the file', () => {
     const d = tmp()
@@ -87,9 +87,9 @@ describe('loadMachineConfig', () => {
   })
 })
 
-describe('napdevHome', () => {
-  it('uses NAPDEV_HOME or ~/.napdev', () => {
-    expect(napdevHome({ NAPDEV_HOME: '/x/y' })).toBe('/x/y')
-    expect(napdevHome({})).toBe(join(homedir(), '.napdev'))
+describe('dozerHome', () => {
+  it('uses DOZER_HOME or ~/.dozer', () => {
+    expect(dozerHome({ DOZER_HOME: '/x/y' })).toBe('/x/y')
+    expect(dozerHome({})).toBe(join(homedir(), '.dozer'))
   })
 })

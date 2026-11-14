@@ -1,6 +1,6 @@
 // Harness for the acceptance suite on real Next.js 16 apps.
 // The app templates in test/e2e/apps are copied OUTSIDE the repo (Next would otherwise take the
-// napdev repo as its workspace root), installed once per template hash, and run with the built CLI.
+// dozer repo as its workspace root), installed once per template hash, and run with the built CLI.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -35,10 +35,10 @@ function templateHash(): string {
 /**
  * Returns the (real) path of an installed copy of the templates. `pnpm install` runs only the
  * first time for a given template hash. Page sources are reset to the templates on every call,
- * and each app gets a `napdev` bin that runs this checkout's dist/cli.cjs.
+ * and each app gets a `dozer` bin that runs this checkout's dist/cli.cjs.
  */
 export function prepareWorkspace(): string {
-  const ws = join(tmpdir(), `napdev-e2e-${templateHash()}`)
+  const ws = join(tmpdir(), `dozer-e2e-${templateHash()}`)
   const marker = join(ws, '.installed')
   if (!existsSync(marker)) {
     rmSync(ws, { recursive: true, force: true })
@@ -50,8 +50,8 @@ export function prepareWorkspace(): string {
     resetPage(ws, app)
     const bin = join(ws, app, 'node_modules', '.bin')
     mkdirSync(bin, { recursive: true })
-    writeFileSync(join(bin, 'napdev'), `#!/bin/sh\nexec "${process.execPath}" "${CLI}" "$@"\n`)
-    chmodSync(join(bin, 'napdev'), 0o755)
+    writeFileSync(join(bin, 'dozer'), `#!/bin/sh\nexec "${process.execPath}" "${CLI}" "$@"\n`)
+    chmodSync(join(bin, 'dozer'), 0o755)
   }
   return realpathSync(ws)
 }
@@ -64,7 +64,7 @@ export function resetPage(ws: string, app: AppName): void {
 }
 
 /** A short home: the coordinator's unix socket path must stay under ~104 bytes. */
-export const makeHome = () => mkdtempSync('/tmp/napdev-e2e-h')
+export const makeHome = () => mkdtempSync('/tmp/dozer-e2e-h')
 
 export interface Proc { pid: number; pgid: number; command: string }
 
@@ -88,10 +88,10 @@ export function nextProcesses(ws: string): Proc[] {
   const ps = processes()
   const trees = new Set(nextTrees(ws, ps))
   return ps.filter((p) => trees.has(p.pgid) ||
-    (p.command.includes(ws) && !p.command.includes('/node_modules/.bin/napdev') && !p.command.startsWith('ps ')))
+    (p.command.includes(ws) && !p.command.includes('/node_modules/.bin/dozer') && !p.command.startsWith('ps ')))
 }
 
-/** `napdev next dev` gate processes of this checkout. */
+/** `dozer next dev` gate processes of this checkout. */
 export const gateProcesses = (): Proc[] => processes().filter((p) => p.command.includes(`${CLI} next dev`))
 export const coordinatorProcesses = (): Proc[] => processes().filter((p) => p.command.includes(`${CLI} __coordinator`))
 
@@ -115,12 +115,12 @@ export function portFree(port: number): Promise<boolean> {
   })
 }
 
-export function napdev(home: string, ...args: string[]): string {
-  return execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env: { ...cleanEnv(), NAPDEV_HOME: home } })
+export function dozer(home: string, ...args: string[]): string {
+  return execFileSync(process.execPath, [CLI, ...args], { encoding: 'utf8', env: { ...cleanEnv(), DOZER_HOME: home } })
 }
 
 export function status(home: string): AppView[] {
-  return JSON.parse(napdev(home, 'status', '--json')) as AppView[]
+  return JSON.parse(dozer(home, 'status', '--json')) as AppView[]
 }
 
 export function appView(home: string, app: AppName): AppView | undefined {
@@ -129,7 +129,7 @@ export function appView(home: string, app: AppName): AppView | undefined {
 
 function cleanEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env }
-  for (const k of Object.keys(env)) if (k.startsWith('NAPDEV')) delete env[k]
+  for (const k of Object.keys(env)) if (k.startsWith('DOZER')) delete env[k]
   return env
 }
 
@@ -141,17 +141,17 @@ export async function startApps(ws: string, home: string, env: Record<string, st
     cwd: ws,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...cleanEnv(), NEXT_TELEMETRY_DISABLED: '1', NAPDEV_HOME: home, ...env },
+    env: { ...cleanEnv(), NEXT_TELEMETRY_DISABLED: '1', DOZER_HOME: home, ...env },
   })
   const g: Group = { proc, pgid: proc.pid!, lines: [], exited: new Promise((r) => proc.once('exit', (c) => r(c))) }
   for (const s of [proc.stdout!, proc.stderr!]) {
     s.setEncoding('utf8').on('data', (d: string) => {
       g.lines.push(...d.split('\n'))
-      if (process.env.NAPDEV_E2E_VERBOSE === '1') process.stdout.write(d)
+      if (process.env.DOZER_E2E_VERBOSE === '1') process.stdout.write(d)
     })
   }
   const end = Date.now() + 30_000
-  while (APPS.some((a) => !g.lines.some((l) => l.includes(`napdev listening on http://localhost:${PORTS[a]}`)))) {
+  while (APPS.some((a) => !g.lines.some((l) => l.includes(`dozer listening on http://localhost:${PORTS[a]}`)))) {
     if (Date.now() > end || proc.exitCode !== null) throw new Error(`apps did not start:\n${g.lines.join('\n')}`)
     await sleepMs(100)
   }

@@ -1,10 +1,10 @@
 import { askCoordinator } from '../coordinator/client.js'
 import type { AppView } from '../coordinator/protocol.js'
-import { napdevHome } from '../config.js'
+import { dozerHome } from '../config.js'
 import type { GateState } from '../gate.js'
 
-const USAGE = 'usage: napdev status [--json]\n'
-const NONE = 'No napdev apps are running.\n'
+const USAGE = 'usage: dozer status [--json]\n'
+const NONE = 'No dozer apps are running.\n'
 const ORDER: Record<GateState, number> = { awake: 0, waking: 1, asleep: 2 }
 
 /** `never`, `<n>s ago` (under a minute), `<n>m ago` (under an hour), else `<n>h ago`. */
@@ -38,7 +38,7 @@ export async function runStatus(argv: string[], env: NodeJS.ProcessEnv): Promise
     process.stderr.write(USAGE)
     return 1
   }
-  const reply = await askCoordinator({ t: 'list' }, napdevHome(env))
+  const reply = await askCoordinator({ t: 'list' }, dozerHome(env))
   if (reply?.t !== 'apps' || reply.apps.length === 0) {
     process.stdout.write(argv.length ? '[]\n' : NONE)
     return 0

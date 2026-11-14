@@ -14,11 +14,11 @@ export class TreeSurvivedError extends Error {
 }
 
 export function resolveNextBin(appDir: string, env: NodeJS.ProcessEnv): string {
-  if (env.NAPDEV_NEXT_BIN) return env.NAPDEV_NEXT_BIN
+  if (env.DOZER_NEXT_BIN) return env.DOZER_NEXT_BIN
   try {
     return createRequire(join(appDir, 'package.json')).resolve('next/dist/bin/next')
   } catch {
-    throw new Error(`could not resolve next from ${appDir}; install next there or set NAPDEV_NEXT_BIN`)
+    throw new Error(`could not resolve next from ${appDir}; install next there or set DOZER_NEXT_BIN`)
   }
 }
 
@@ -27,7 +27,7 @@ const SELF = fileURLToPath(import.meta.url)
 export const GUARD_CLI = SELF.endsWith('.cjs') ? SELF : join(dirname(SELF), '..', 'dist', 'cli.cjs')
 
 export function childEnv(env: NodeJS.ProcessEnv, publicPort: number, hiddenPort: number, tty: boolean): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env, NAPDEV_PUBLIC_PORT: String(publicPort), PORT: String(hiddenPort) }
+  const out: NodeJS.ProcessEnv = { ...env, DOZER_PUBLIC_PORT: String(publicPort), PORT: String(hiddenPort) }
   // Next's output reaches the terminal through a pipe; keep its colours unless the user chose otherwise
   if (tty && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) out.FORCE_COLOR = '1'
   return out

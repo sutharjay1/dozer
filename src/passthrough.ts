@@ -14,7 +14,7 @@ export function runNext(nextBin: string, args: string[], cwd: string, env: NodeJ
       resolve(code)
     }
     child.once('error', (err) => {
-      process.stderr.write(`napdev: could not run next (${err.message})\n`)
+      process.stderr.write(`dozer: could not run next (${err.message})\n`)
       done(1)
     })
     child.once('exit', (code, signal) => done(code ?? 128 + (signal ? constants.signals[signal] : 0)))

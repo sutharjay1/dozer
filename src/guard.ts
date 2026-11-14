@@ -1,4 +1,4 @@
-// `napdev __guard <nextBin> dev …`: the leader of an awake Next.js process group.
+// `dozer __guard <nextBin> dev …`: the leader of an awake Next.js process group.
 // The gate spawns it in a new session and holds its stdin open without writing. If the gate dies
 // in any way (SIGKILL included), stdin ends and the guard SIGKILLs its whole group, Next with it.
 // Keep the imports minimal: one guard runs per awake app.
@@ -16,7 +16,7 @@ function killGroup(): void {
 export function runGuard(argv: string[]): Promise<number> {
   const [nextBin, ...args] = argv
   if (!nextBin) {
-    process.stderr.write('napdev: __guard needs the next binary\n')
+    process.stderr.write('dozer: __guard needs the next binary\n')
     return Promise.resolve(1)
   }
   process.stdout.on('error', () => {})
@@ -49,7 +49,7 @@ export function runGuard(argv: string[]): Promise<number> {
       process.stdout.write('', () => process.stderr.write('', () => resolve(code)))
     }
     child.once('error', (err) => {
-      process.stderr.write(`napdev: could not run next (${err.message})\n`)
+      process.stderr.write(`dozer: could not run next (${err.message})\n`)
       finish(1)
     })
     child.once('exit', (code, signal) => {

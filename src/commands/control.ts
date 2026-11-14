@@ -1,6 +1,6 @@
 import { askCoordinator } from '../coordinator/client.js'
 import type { AppView } from '../coordinator/protocol.js'
-import { napdevHome } from '../config.js'
+import { dozerHome } from '../config.js'
 
 export type Match = { kind: 'one'; app: AppView } | { kind: 'many'; apps: AppView[] } | { kind: 'none' }
 
@@ -27,20 +27,20 @@ async function control(verb: 'sleep' | 'wake', argv: string[], env: NodeJS.Proce
   const all = verb === 'sleep' && argv.length === 1 && argv[0] === '--all'
   const query = argv[0]
   if (!all && (argv.length !== 1 || !query || query.startsWith('-'))) {
-    return fail(`usage: napdev sleep <name> | --all\n       napdev wake <name>\n`)
+    return fail(`usage: dozer sleep <name> | --all\n       dozer wake <name>\n`)
   }
-  const home = napdevHome(env)
+  const home = dozerHome(env)
   if (all) {
     const reply = await askCoordinator({ t: 'sleep', target: '*' }, home)
-    if (reply === null) return fail('No napdev apps are running.\n')
-    if (reply.t !== 'ok') return fail('napdev: could not sleep apps\n')
+    if (reply === null) return fail('No dozer apps are running.\n')
+    if (reply.t !== 'ok') return fail('dozer: could not sleep apps\n')
     process.stdout.write(`Asleep: ${reply.count} app(s)\n`)
     return 0
   }
   const listed = await askCoordinator({ t: 'list' }, home)
-  if (listed?.t !== 'apps' || listed.apps.length === 0) return fail('No napdev apps are running.\n')
+  if (listed?.t !== 'apps' || listed.apps.length === 0) return fail('No dozer apps are running.\n')
   const m = matchApps(listed.apps, query!)
-  if (m.kind === 'none') return fail(`No napdev app matches "${query}". Running apps:\n${names(listed.apps)}`)
+  if (m.kind === 'none') return fail(`No dozer app matches "${query}". Running apps:\n${names(listed.apps)}`)
   if (m.kind === 'many') return fail(`"${query}" matches several apps:\n${names(m.apps)}`)
   const done = `${verb === 'sleep' ? 'Asleep' : 'Awake'}: ${m.app.name}\n`
   // already there: the coordinator would answer count 0, but the goal state holds
@@ -49,7 +49,7 @@ async function control(verb: 'sleep' | 'wake', argv: string[], env: NodeJS.Proce
     return 0
   }
   const reply = await askCoordinator({ t: verb, target: m.app.id }, home)
-  if (reply?.t !== 'ok' || reply.count < 1) return fail(`napdev: could not ${verb} ${m.app.name}\n`)
+  if (reply?.t !== 'ok' || reply.count < 1) return fail(`dozer: could not ${verb} ${m.app.name}\n`)
   process.stdout.write(done)
   return 0
 }

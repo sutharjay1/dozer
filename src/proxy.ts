@@ -17,7 +17,7 @@ function endToEnd(headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders {
 
 function failureBody(tail: LogTail): string {
   const lines = tail.lines().join('\n')
-  return `napdev: Next.js could not start\n\n${lines}\n\nRun with NAPDEV=0 to bypass napdev.\n`
+  return `dozer: Next.js could not start\n\n${lines}\n\nRun with DOZER=0 to bypass dozer.\n`
 }
 
 function sendText(res: http.ServerResponse, status: number, body: string): void {
@@ -56,7 +56,7 @@ export function createGateServer(o: { gate: Gate; sockets: SocketHub; tail: LogT
     }, (err: unknown) => {
       if (err instanceof WakeTimeoutError) {
         const s = Math.round(gate.config.wakeTimeoutMs / 1000)
-        sendText(res, 504, `napdev: Next.js did not start within ${s} s\n`)
+        sendText(res, 504, `dozer: Next.js did not start within ${s} s\n`)
       } else {
         sendText(res, 502, failureBody(tail))
       }

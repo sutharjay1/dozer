@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import type http from 'node:http'
 import { parseDevArgs, type DevArgs } from '../args.js'
 import { resolveNextBin, treeRssBytes, type ChildHandle } from '../child.js'
-import { DEFAULTS, loadAppConfig, loadMachineConfig, napdevHome, type AppConfig } from '../config.js'
+import { DEFAULTS, loadAppConfig, loadMachineConfig, dozerHome, type AppConfig } from '../config.js'
 import { connectGate, type CoordinatorClient } from '../coordinator/client.js'
 import { PROTOCOL_VERSION, socketPath, socketPathUsable } from '../coordinator/protocol.js'
 import { Gate, type GateSnapshot, type GateState, type SleepReason } from '../gate.js'
@@ -21,7 +21,7 @@ const ACTIVITY_REPORT_GAP_MS = 250
 
 export type GateListener = (snapshot: GateSnapshot, reason?: SleepReason) => void
 
-/** A running `napdev next dev`: the public port is bound and Next is asleep until a request. */
+/** A running `dozer next dev`: the public port is bound and Next is asleep until a request. */
 export interface DevSession {
   appDir: string
   home: string
@@ -45,7 +45,7 @@ interface Progress { args?: DevArgs; nextBin?: string; publicPort?: number }
 async function startDev(argv: string[], env: NodeJS.ProcessEnv, appDir: string, p: Progress): Promise<DevSession> {
   const args = p.args = parseDevArgs(argv, env)
   const config = loadAppConfig(appDir, env)
-  const home = napdevHome(env)
+  const home = dozerHome(env)
   mkdirSync(home, { recursive: true })
   const nextBin = p.nextBin = resolveNextBin(appDir, env)
   const identity = await identify(appDir)
@@ -145,11 +145,11 @@ async function fallback(err: unknown, argv: string[], env: NodeJS.ProcessEnv, ap
     try {
       nextBin = resolveNextBin(appDir, env)
     } catch {
-      process.stderr.write(`napdev: could not find next in ${appDir}\n`)
+      process.stderr.write(`dozer: could not find next in ${appDir}\n`)
       return 1
     }
   }
-  process.stderr.write(`napdev: could not start (${(err as Error)?.message ?? String(err)}); running next dev directly\n`)
+  process.stderr.write(`dozer: could not start (${(err as Error)?.message ?? String(err)}); running next dev directly\n`)
   const args = ['dev', ...argv]
   if (p.args && !hasPortFlag(argv)) args.push('--port', String(p.publicPort ?? p.args.publicPort))
   return runNext(nextBin, args, appDir, env)
@@ -164,10 +164,10 @@ const message = (err: unknown) => (err as Error)?.message ?? String(err)
  */
 function attachCoordinator(session: DevSession, env: NodeJS.ProcessEnv): () => void {
   const { gate, identity, config, appDir, publicPort, home } = session
-  if (env.NAPDEV_COORDINATOR === '0') return () => {}
+  if (env.DOZER_COORDINATOR === '0') return () => {}
   const path = socketPath(home)
   if (!socketPathUsable(path)) {
-    process.stderr.write(`napdev: coordinator socket path too long (${Buffer.byteLength(path)} bytes); running without the machine-wide limit\n`)
+    process.stderr.write(`dozer: coordinator socket path too long (${Buffer.byteLength(path)} bytes); running without the machine-wide limit\n`)
     return () => {}
   }
   let graceMs: number = DEFAULTS.graceMs
@@ -229,10 +229,10 @@ function attachCoordinator(session: DevSession, env: NodeJS.ProcessEnv): () => v
     c.onCommand((m) => {
       if (m.t === 'sleep') {
         if (m.reason === 'evicted' && !mayEvict()) return report(true)
-        gate.sleep(m.reason).catch((err: unknown) => process.stderr.write(`napdev: could not sleep Next.js (${message(err)})\n`))
+        gate.sleep(m.reason).catch((err: unknown) => process.stderr.write(`dozer: could not sleep Next.js (${message(err)})\n`))
       } else if (m.t === 'wake') {
         gate.resetFailures()
-        gate.ensureAwake().catch((err: unknown) => process.stderr.write(`napdev: could not wake Next.js (${message(err)})\n`))
+        gate.ensureAwake().catch((err: unknown) => process.stderr.write(`dozer: could not wake Next.js (${message(err)})\n`))
       }
     })
     void sample()
@@ -264,7 +264,7 @@ function serve(session: DevSession, ready: () => void): Promise<number> {
     const shutdown = () => {
       stopping = true
       session.close().then(() => finish(0), (err: unknown) => {
-        process.stderr.write(`napdev: could not stop Next.js (${(err as Error)?.message ?? String(err)})\n`)
+        process.stderr.write(`dozer: could not stop Next.js (${(err as Error)?.message ?? String(err)})\n`)
         finish(1)
       })
     }
@@ -288,10 +288,10 @@ export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string
     try {
       nextBin = resolveNextBin(cwd, env)
     } catch {
-      process.stderr.write(`napdev: could not find next in ${cwd}\n`)
+      process.stderr.write(`dozer: could not find next in ${cwd}\n`)
       return 1
     }
-    process.stderr.write('napdev: --experimental-https is not supported yet; running next dev directly\n')
+    process.stderr.write('dozer: --experimental-https is not supported yet; running next dev directly\n')
     return runNext(nextBin, ['dev', ...argv], cwd, env)
   }
   const progress: Progress = {}
@@ -305,18 +305,18 @@ export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string
     }
     return fallback(err, argv, env, cwd, progress)
   }
-  // a bug in napdev must not leave Next running: kill every group we started, then exit
+  // a bug in dozer must not leave Next running: kill every group we started, then exit
   const crash = (err: unknown) => {
     for (const pid of session.childPids()) { try { process.kill(-pid, 'SIGKILL') } catch { /* already gone */ } }
-    process.stderr.write(`napdev: crashed (${message(err)})\n`)
+    process.stderr.write(`dozer: crashed (${message(err)})\n`)
     process.exit(1)
   }
   process.on('uncaughtException', crash)
   process.on('unhandledRejection', crash)
-  if (env.NAPDEV_DEBUG === '1') process.stderr.write(`napdev: identity ${JSON.stringify(session.identity)}\n`)
+  if (env.DOZER_DEBUG === '1') process.stderr.write(`dozer: identity ${JSON.stringify(session.identity)}\n`)
   let detach = () => {}
   const code = await serve(session, () => {
-    process.stdout.write(`napdev listening on http://localhost:${session.publicPort} (Next.js asleep; starts on first request)\n`)
+    process.stdout.write(`dozer listening on http://localhost:${session.publicPort} (Next.js asleep; starts on first request)\n`)
     detach = attachCoordinator(session, env)
   })
   detach()

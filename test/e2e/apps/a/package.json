@@ -1,8 +1,8 @@
 {
-  "name": "napdev-e2e-a",
+  "name": "dozer-e2e-a",
   "private": true,
   "scripts": {
-    "dev": "napdev next dev -p 4310"
+    "dev": "dozer next dev -p 4310"
   },
   "dependencies": {
     "next": "16.4.6",

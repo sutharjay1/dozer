@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { chromium, type Browser } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
-  APPS, appView, coordinatorProcesses, ctrlC, gateProcesses, killEverything, makeHome, napdev, nextProcesses,
+  APPS, appView, coordinatorProcesses, ctrlC, gateProcesses, killEverything, makeHome, dozer, nextProcesses,
   nextTrees, pagePath, pgrep, PORTS, portFree, prepareWorkspace, resetPage, rssBytes, sleepMs, startApps, until,
   CLI, type Group,
 } from './harness.js'
@@ -66,7 +66,7 @@ describe('three gated apps, idle 20 s', () => {
   const home = makeHome()
 
   beforeAll(async () => {
-    group = await startApps(ws, home, { NAPDEV_IDLE: '20s' })
+    group = await startApps(ws, home, { DOZER_IDLE: '20s' })
   })
 
   afterAll(async () => {
@@ -111,7 +111,7 @@ describe('three gated apps, maxAwake 1, idle 10 min', () => {
   let browser: Browser | null = null
 
   beforeAll(async () => {
-    group = await startApps(ws, home, { NAPDEV_IDLE: '10m', NAPDEV_MAX_AWAKE: '1' })
+    group = await startApps(ws, home, { DOZER_IDLE: '10m', DOZER_MAX_AWAKE: '1' })
     await until(() => appViewCount(home) === 3, 10_000, 'three apps registered')
   })
 
@@ -140,7 +140,7 @@ describe('three gated apps, maxAwake 1, idle 10 min', () => {
     await page.goto(url('a'), { waitUntil: 'load' })
     await page.getByText('app a v1').waitFor({ timeout: 60_000 })
     await sleepMs(3_000) // the dev websocket is connected
-    expect(napdev(home, 'sleep', 'e2e-a')).toContain('Asleep:')
+    expect(dozer(home, 'sleep', 'e2e-a')).toContain('Asleep:')
     await until(() => appView(home, 'a')?.state === 'asleep', 30_000, 'a asleep')
     const before = { loads, lastHttpAt: appView(home, 'a')?.lastHttpAt }
 

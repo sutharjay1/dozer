@@ -15,7 +15,7 @@ afterEach(async () => {
 
 // a unique argv marker lets pgrep find only this test's processes
 function launcher(env: Record<string, string> = {}) {
-  const marker = `napdev-test-${randomUUID()}` // no leading dashes, or pgrep reads it as an option
+  const marker = `dozer-test-${randomUUID()}` // no leading dashes, or pgrep reads it as an option
   const out: string[] = []
   const l = createChildLauncher({
     nextBin: FAKE_NEXT, cwd: process.cwd(), env: { ...process.env, ...env }, passthrough: [marker],

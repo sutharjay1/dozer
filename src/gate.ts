@@ -80,7 +80,7 @@ export class Gate {
   private reportError(error: unknown, context: GateErrorContext): void {
     try {
       if (this.deps.onError) this.deps.onError(error, context)
-      else process.stderr.write(`napdev: ${context}: ${(error as Error)?.message ?? String(error)}\n`)
+      else process.stderr.write(`dozer: ${context}: ${(error as Error)?.message ?? String(error)}\n`)
     } catch { /* reporting must never throw */ }
   }
 

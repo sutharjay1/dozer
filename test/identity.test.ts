@@ -14,7 +14,7 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.test', ...args], { cwd, stdio: 'ignore' })
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), 'napdev-identity-'))
+  root = mkdtempSync(join(tmpdir(), 'dozer-identity-'))
   const repo = join(root, 'myrepo')
   mainApp = join(repo, 'apps', 'web')
   mkdirSync(mainApp, { recursive: true })

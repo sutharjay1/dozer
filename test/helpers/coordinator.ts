@@ -15,7 +15,7 @@ export const CLI = fileURLToPath(new URL('../../dist/cli.cjs', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../fixtures/fake-next.mjs', import.meta.url))
 
 // Unix socket paths are capped near 104 bytes, so the homes live under a short directory.
-export const root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'napdev-co-'))
+export const root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'dozer-co-'))
 export const FAKE = join(root, `fake-next-${randomUUID()}.mjs`)
 symlinkSync(FIXTURE, FAKE)
 
@@ -55,13 +55,13 @@ export async function startCli(name: string, env: Record<string, string> = {}): 
   const port = await findHiddenPort()
   const proc = spawn(process.execPath, [CLI, 'next', 'dev', '-p', String(port)], {
     cwd: app,
-    env: { ...process.env, NAPDEV_NEXT_BIN: FAKE, NAPDEV_HOME: home, NAPDEV_MAX_AWAKE: '1', NAPDEV_GRACE: '1s', ...env },
+    env: { ...process.env, DOZER_NEXT_BIN: FAKE, DOZER_HOME: home, DOZER_MAX_AWAKE: '1', DOZER_GRACE: '1s', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const cli: Cli = { name, port, proc, lines: [], exited: new Promise((r) => proc.once('exit', (c) => r(c))) }
   for (const s of [proc.stdout!, proc.stderr!]) s.setEncoding('utf8').on('data', (d: string) => cli.lines.push(...d.split('\n')))
   clis.push(cli)
-  await vi.waitFor(() => expect(cli.lines.some((l) => l.startsWith('napdev listening'))).toBe(true), { timeout: 10_000 })
+  await vi.waitFor(() => expect(cli.lines.some((l) => l.startsWith('dozer listening'))).toBe(true), { timeout: 10_000 })
   return cli
 }
 

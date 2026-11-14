@@ -88,7 +88,7 @@ describe('matchApps', () => {
 interface Ran { code: number; out: string; err: string }
 function run(...args: string[]): Promise<Ran> {
   return new Promise((resolve) => {
-    execFile(process.execPath, [CLI, ...args], { env: { ...process.env, NAPDEV_HOME: home } }, (error, out, err) => {
+    execFile(process.execPath, [CLI, ...args], { env: { ...process.env, DOZER_HOME: home } }, (error, out, err) => {
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, out, err })
     })
   })
@@ -96,13 +96,13 @@ function run(...args: string[]): Promise<Ran> {
 
 describe('status, sleep and wake against a real daemon', { timeout: 40_000 }, () => {
   it('status with no coordinator exits 0', async () => {
-    expect(await run('status')).toEqual({ code: 0, out: 'No napdev apps are running.\n', err: '' })
+    expect(await run('status')).toEqual({ code: 0, out: 'No dozer apps are running.\n', err: '' })
     expect(await run('status', '--json')).toMatchObject({ code: 0, out: '[]\n' })
   })
 
   it('sleep and wake with no coordinator exit 1', async () => {
-    expect(await run('sleep', '--all')).toMatchObject({ code: 1, out: '', err: 'No napdev apps are running.\n' })
-    expect(await run('wake', 'web')).toMatchObject({ code: 1, out: '', err: 'No napdev apps are running.\n' })
+    expect(await run('sleep', '--all')).toMatchObject({ code: 1, out: '', err: 'No dozer apps are running.\n' })
+    expect(await run('wake', 'web')).toMatchObject({ code: 1, out: '', err: 'No dozer apps are running.\n' })
   })
 
   it('status lists a sleeping app', async () => {
@@ -170,7 +170,7 @@ describe('status, sleep and wake against a real daemon', { timeout: 40_000 }, ()
     await vi.waitFor(async () => expect(await list()).toHaveLength(1))
     const r = await run('wake', 'nope')
     expect(r.code).toBe(1)
-    expect(r.out + r.err).toMatch(/^No napdev app matches "nope"\. Running apps:\n.*\/web @ -\n$/)
+    expect(r.out + r.err).toMatch(/^No dozer app matches "nope"\. Running apps:\n.*\/web @ -\n$/)
   })
 
   it('unknown flags and a missing name print usage and exit 1', async () => {

@@ -7,11 +7,11 @@ import { runCoordinator } from './coordinator/server.js'
 import { runGuard } from './guard.js'
 import { runNext } from './passthrough.js'
 
-const USAGE = `usage: napdev next dev [next dev options]
-       napdev status [--json]
-       napdev sleep <name> | --all
-       napdev wake <name>
-       napdev init [--yes]
+const USAGE = `usage: dozer next dev [next dev options]
+       dozer status [--json]
+       dozer sleep <name> | --all
+       dozer wake <name>
+       dozer init [--yes]
 `
 
 async function main(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
@@ -25,24 +25,24 @@ async function main(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promis
     process.stderr.write(USAGE)
     return 1
   }
-  if (argv[1] === 'dev' && env.NAPDEV !== '0') return runDev(argv.slice(2), env, cwd)
+  if (argv[1] === 'dev' && env.DOZER !== '0') return runDev(argv.slice(2), env, cwd)
   let nextBin: string
   try {
     nextBin = resolveNextBin(cwd, env)
   } catch {
-    process.stderr.write(`napdev: could not find next in ${cwd}\n`)
+    process.stderr.write(`dozer: could not find next in ${cwd}\n`)
     return 1
   }
   return runNext(nextBin, argv.slice(1), cwd, env)
 }
 
-// a closed pipe or terminal (EPIPE, EIO) must not crash napdev while Next is running
+// a closed pipe or terminal (EPIPE, EIO) must not crash dozer while Next is running
 process.stdout.on('error', () => {})
 process.stderr.on('error', () => {})
 main(process.argv.slice(2), process.env, process.cwd()).then(
   (code) => process.exit(code),
   (err: unknown) => {
-    process.stderr.write(`napdev: ${(err as Error)?.stack ?? String(err)}\n`)
+    process.stderr.write(`dozer: ${(err as Error)?.stack ?? String(err)}\n`)
     process.exit(1)
   },
 )

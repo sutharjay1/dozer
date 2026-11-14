@@ -1,7 +1,7 @@
 import { appendFileSync, chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs'
 import net from 'node:net'
 import { join } from 'node:path'
-import { DEFAULTS, loadMachineConfig, napdevHome } from '../config.js'
+import { DEFAULTS, loadMachineConfig, dozerHome } from '../config.js'
 import type { GateState } from '../gate.js'
 import { chooseVictims, type Limits } from './policy.js'
 import {
@@ -33,9 +33,9 @@ export function probe(path: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boole
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
 
-/** `napdev __coordinator`: serves the machine-wide view until 10 s after its last gate leaves. */
+/** `dozer __coordinator`: serves the machine-wide view until 10 s after its last gate leaves. */
 export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
-  const home = napdevHome(env)
+  const home = dozerHome(env)
   mkdirSync(home, { recursive: true })
   const logFile = join(home, 'coordinator.log')
   const log = (line: string) => {

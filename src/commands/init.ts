@@ -1,4 +1,4 @@
-// `napdev init`: find every Next.js app in a workspace and put napdev in front of its `next dev`.
+// `dozer init`: find every Next.js app in a workspace and put dozer in front of its `next dev`.
 // package.json files are edited as text, never re-serialized, so formatting survives byte for byte.
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
@@ -6,18 +6,18 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export interface InitChange { file: string; before: string; after: string }
-/** A script left as it is because napdev cannot gate it yet. */
+/** A script left as it is because dozer cannot gate it yet. */
 export interface InitSkip { file: string; script: string; reason: string }
 
 const SKIP = new Set(['node_modules', '.git', '.next', 'dist'])
 
-/** Replace each bare `next dev` not already preceded by `napdev ` with `napdev next dev`. */
+/** Replace each bare `next dev` not already preceded by `dozer ` with `dozer next dev`. */
 export function rewriteScript(script: string): string {
   return script.replace(/(^|\s|&&|;|\||\(|--)next dev(?=$|[\s;&|)])/g, (m, pre: string, offset: number) => {
     if (pre === '' || /\s/.test(pre)) {
-      if (script.slice(0, offset + pre.length).endsWith('napdev ')) return m
+      if (script.slice(0, offset + pre.length).endsWith('dozer ')) return m
     }
-    return `${pre}napdev next dev`
+    return `${pre}dozer next dev`
   })
 }
 
@@ -153,16 +153,16 @@ function editPackage(text: string, version: string): Edit {
   }
   if (!changed) return { after: null, skipped }
 
-  const hasNapdev = (pkg.dependencies && 'napdev' in pkg.dependencies) || (pkg.devDependencies && 'napdev' in pkg.devDependencies)
-  if (hasNapdev) return { after: out, skipped }
+  const hasDozer = (pkg.dependencies && 'dozer' in pkg.dependencies) || (pkg.devDependencies && 'dozer' in pkg.devDependencies)
+  if (hasDozer) return { after: out, skipped }
   const lay = layoutOf(text)
   const value = JSON.stringify(`^${version}`)
   const rootStartOut = skipWs(out, 0)
   const dev = scanObject(out, rootStartOut).find((e) => e.key === 'devDependencies')
-  if (dev && out[dev.valStart] === '{') return { after: insertEntry(out, dev.valStart, 'napdev', value, 1, lay), skipped }
+  if (dev && out[dev.valStart] === '{') return { after: insertEntry(out, dev.valStart, 'dozer', value, 1, lay), skipped }
   const last = top[top.length - 1]!
   const ws = leadingWs(text, last.keyStart)
-  const block = `${JSON.stringify('devDependencies')}: {${lay.nl}${ws}${lay.unit}${JSON.stringify('napdev')}: ${value}${lay.nl}${ws}}`
+  const block = `${JSON.stringify('devDependencies')}: {${lay.nl}${ws}${lay.unit}${JSON.stringify('dozer')}: ${value}${lay.nl}${ws}}`
   const lastOut = scanObject(out, rootStartOut).at(-1)!
   const wsOut = text.slice(skipBack(text, last.keyStart), last.keyStart)
   return { after: out.slice(0, lastOut.valEnd) + `,${wsOut}${block}` + out.slice(lastOut.valEnd), skipped }
@@ -274,11 +274,11 @@ async function workspaceDirs(root: string): Promise<string[]> {
   return [...included].filter((d) => !excluded.has(d)).sort()
 }
 
-export async function planInit(rootDir: string, napdevVersion: string): Promise<InitChange[]> {
-  return (await plan(rootDir, napdevVersion)).changes
+export async function planInit(rootDir: string, dozerVersion: string): Promise<InitChange[]> {
+  return (await plan(rootDir, dozerVersion)).changes
 }
 
-async function plan(rootDir: string, napdevVersion: string): Promise<{ changes: InitChange[]; skipped: InitSkip[] }> {
+async function plan(rootDir: string, dozerVersion: string): Promise<{ changes: InitChange[]; skipped: InitSkip[] }> {
   const changes: InitChange[] = []
   const skipped: InitSkip[] = []
   for (const dir of await workspaceDirs(rootDir)) {
@@ -289,7 +289,7 @@ async function plan(rootDir: string, napdevVersion: string): Promise<{ changes: 
     } catch {
       continue
     }
-    const edit = editPackage(before, napdevVersion)
+    const edit = editPackage(before, dozerVersion)
     for (const script of edit.skipped) skipped.push({ file, script, reason: `${HTTPS_FLAG} is not supported yet` })
     if (edit.after !== null && edit.after !== before) changes.push({ file, before, after: edit.after })
   }
@@ -325,10 +325,10 @@ function ownVersion(): string {
     const p = join(dir, 'package.json')
     if (existsSync(p)) {
       const pkg = JSON.parse(readFileSync(p, 'utf8')) as { name?: string; version?: string }
-      if (pkg.name === 'napdev' && pkg.version) return pkg.version
+      if (pkg.name === 'dozer' && pkg.version) return pkg.version
     }
     const up = dirname(dir)
-    if (up === dir) throw new Error('could not find napdev package.json')
+    if (up === dir) throw new Error('could not find dozer package.json')
     dir = up
   }
 }
@@ -337,7 +337,7 @@ export async function runInit(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
   void env
   const yes = argv.includes('--yes')
   if (argv.some((a) => a !== '--yes')) {
-    process.stderr.write('usage: napdev init [--yes]\n')
+    process.stderr.write('usage: dozer init [--yes]\n')
     return 1
   }
   let changes: InitChange[]
@@ -345,7 +345,7 @@ export async function runInit(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
   try {
     ({ changes, skipped } = await plan(cwd, ownVersion()))
   } catch (err) {
-    process.stderr.write(`napdev: ${(err as Error).message}\n`)
+    process.stderr.write(`dozer: ${(err as Error).message}\n`)
     return 1
   }
   for (const s of skipped) process.stdout.write(`Skipped ${s.file} script "${s.script}": ${s.reason}.\n`)
@@ -358,7 +358,7 @@ export async function runInit(argv: string[], env: NodeJS.ProcessEnv, cwd: strin
     process.stdout.write(`--- ${c.file}\n+++ ${c.file}\n${diffLines(c.before, c.after).join('\n')}\n\n`)
   }
   if (!yes) {
-    process.stdout.write('Run napdev init --yes to apply.\n')
+    process.stdout.write('Run dozer init --yes to apply.\n')
     return 0
   }
   for (const c of changes) await writeFile(join(cwd, c.file), c.after)

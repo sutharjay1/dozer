@@ -14,7 +14,7 @@ const FIXTURE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.ur
 
 // A uniquely named link to the fixture: pgrep finds only this file's processes,
 // while `ws` still resolves from the fixture's real location.
-const root = mkdtempSync(join(tmpdir(), 'napdev-dev-test-'))
+const root = mkdtempSync(join(tmpdir(), 'dozer-dev-test-'))
 const FAKE = join(root, `fake-next-${randomUUID()}.mjs`)
 symlinkSync(FIXTURE, FAKE)
 
@@ -45,7 +45,7 @@ function startCli(args: string[], env: Record<string, string> = {}): Cli {
   const proc = spawn(process.execPath, [CLI, ...args], {
     cwd: app,
     // these tests are about one gate; the machine-wide coordinator is covered in coordinator.test.ts
-    env: { ...process.env, NAPDEV_NEXT_BIN: FAKE, NAPDEV_HOME: home, NAPDEV_COORDINATOR: '0', ...env },
+    env: { ...process.env, DOZER_NEXT_BIN: FAKE, DOZER_HOME: home, DOZER_COORDINATOR: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const cli: Cli = {
@@ -101,7 +101,7 @@ afterEach(async () => {
       await cli.exited
       clearTimeout(t)
     }
-    // Plain `next dev` runs (NAPDEV=0, fallback) leave the fixture's idle grandchild behind.
+    // Plain `next dev` runs (DOZER=0, fallback) leave the fixture's idle grandchild behind.
     for (const pid of cli.grandchildren) { try { process.kill(pid, 'SIGKILL') } catch { /* gone */ } }
   }
   // a stray stop is killed by its group; give the kernel a moment to reap
@@ -115,16 +115,16 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('napdev next dev', { timeout: 20_000 }, () => {
+describe('dozer next dev', { timeout: 20_000 }, () => {
   it('prints the ready line and starts no child', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    expect(await waitForLine(cli)).toBe(`napdev listening on http://localhost:${port} (Next.js asleep; starts on first request)`)
+    expect(await waitForLine(cli)).toBe(`dozer listening on http://localhost:${port} (Next.js asleep; starts on first request)`)
     expect(pgrep(FAKE)).toEqual([])
   })
 
   it('rewrites the hidden port in child output', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     const body = await (await fetch(`http://localhost:${port}/`)).text()
     expect(body).toContain('fake-next')
     expect(await waitForLine(cli, /Local:/)).toContain(`http://localhost:${port}`)
@@ -132,7 +132,7 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
 
   it('SIGTERM stops the tree and frees the port', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     await (await fetch(`http://localhost:${port}/`)).text()
     expect(pgrep(FAKE).length).toBeGreaterThan(0)
     cli.proc.kill('SIGTERM')
@@ -143,7 +143,7 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
 
   it('a crashed next leaves no worker behind, and the next request wakes a fresh one', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     const body = await (await fetch(`http://localhost:${port}/`)).text()
     const main = Number(/pid=(\d+)/.exec(body)![1])
     await waitForLine(cli, /grandchild=/)
@@ -159,7 +159,7 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
 
   it('SIGKILL of the gate leaves no next process within 3 s', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
     await waitForLine(cli, /grandchild=/)
     expect(pgrep(FAKE).length).toBeGreaterThan(0)
@@ -174,7 +174,7 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
   // the spec's goal 1: an ESM bundle and an eager `ws` load put it at ~72 MB on macOS
   it('a sleeping gate stays under 60 MB RSS', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     await new Promise((r) => setTimeout(r, 2_000))
     const kb = Number(execFileSync('ps', ['-o', 'rss=', '-p', String(cli.proc.pid)], { encoding: 'utf8' }).trim())
     expect(kb * 1024).toBeLessThan(60 * 1024 ** 2)
@@ -182,31 +182,31 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
 
   it('SIGINT while asleep exits 0', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port)])
-    await waitForLine(cli, /napdev listening/)
+    await waitForLine(cli, /dozer listening/)
     cli.proc.kill('SIGINT')
     expect(await exitCode(cli)).toBe(0)
     expect(await isPortFree(port, null)).toBe(true)
   })
 
-  it('NAPDEV=0 runs the real command on the public port', async () => {
-    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV: '0' })
+  it('DOZER=0 runs the real command on the public port', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port)], { DOZER: '0' })
     expect(await waitForLine(cli, /Local:/)).toContain(`http://localhost:${port}`)
     const body = await (await fetch(`http://127.0.0.1:${port}/`)).text()
     expect(body).toContain('fake-next')
-    expect(body).toContain('public=') // no NAPDEV_PUBLIC_PORT: Next itself owns the port
+    expect(body).toContain('public=') // no DOZER_PUBLIC_PORT: Next itself owns the port
     expect(body).not.toMatch(/public=\d/)
-    expect(cli.lines.some((l) => l.startsWith('napdev listening'))).toBe(false)
+    expect(cli.lines.some((l) => l.startsWith('dozer listening'))).toBe(false)
     cli.proc.kill('SIGTERM')
     expect(await exitCode(cli)).toBe(0)
   })
 
   it('--experimental-https runs plain next dev with every flag', async () => {
     const cli = startCli(['next', 'dev', '-p', String(port), '--experimental-https'])
-    expect(await waitForLine(cli, /^napdev:/)).toBe('napdev: --experimental-https is not supported yet; running next dev directly')
+    expect(await waitForLine(cli, /^dozer:/)).toBe('dozer: --experimental-https is not supported yet; running next dev directly')
     await waitForLine(cli, /Local:/)
     const body = await (await fetch(`http://127.0.0.1:${port}/`)).text()
     expect(body).toMatch(/public=$/) // Next itself owns the port, no gate in front
-    expect(cli.lines.some((l) => l.startsWith('napdev listening'))).toBe(false)
+    expect(cli.lines.some((l) => l.startsWith('dozer listening'))).toBe(false)
     cli.proc.kill('SIGTERM')
     expect(await exitCode(cli)).toBe(0)
   })
@@ -224,11 +224,11 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     }
   })
 
-  it('falls back to plain next dev when NAPDEV_HOME is not writable', async () => {
+  it('falls back to plain next dev when DOZER_HOME is not writable', async () => {
     writeFileSync(join(app, 'blocker'), 'a file where a directory should be')
-    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_HOME: join(app, 'blocker', 'home') })
-    expect(await waitForLine(cli, /^napdev: could not start/))
-      .toMatch(/^napdev: could not start \(.+\); running next dev directly$/)
+    const cli = startCli(['next', 'dev', '-p', String(port)], { DOZER_HOME: join(app, 'blocker', 'home') })
+    expect(await waitForLine(cli, /^dozer: could not start/))
+      .toMatch(/^dozer: could not start \(.+\); running next dev directly$/)
     await waitForLine(cli, /Local:/)
     const body = await (await fetch(`http://127.0.0.1:${port}/`)).text()
     expect(body).toContain('fake-next')
@@ -236,29 +236,29 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     expect(await exitCode(cli)).toBe(0)
   })
 
-  it('falls back when NAPDEV_HOME is under a read-only directory', async () => {
+  it('falls back when DOZER_HOME is under a read-only directory', async () => {
     const locked = join(root, 'locked')
     mkdirSync(locked, { recursive: true })
     chmodSync(locked, 0o555)
-    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_HOME: join(locked, 'home') })
-    expect(await waitForLine(cli, /^napdev: could not start/)).toContain('running next dev directly')
+    const cli = startCli(['next', 'dev', '-p', String(port)], { DOZER_HOME: join(locked, 'home') })
+    expect(await waitForLine(cli, /^dozer: could not start/)).toContain('running next dev directly')
     await waitForLine(cli, /Local:/)
     cli.proc.kill('SIGTERM')
     expect(await exitCode(cli)).toBe(0)
   })
 
   it('exits 1 when next cannot be found', async () => {
-    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_NEXT_BIN: '' })
+    const cli = startCli(['next', 'dev', '-p', String(port)], { DOZER_NEXT_BIN: '' })
     expect(await exitCode(cli)).toBe(1)
-    expect(cli.lines.some((l) => l.startsWith('napdev: could not find next in '))).toBe(true)
+    expect(cli.lines.some((l) => l.startsWith('dozer: could not find next in '))).toBe(true)
   })
 
   it('says so once and keeps serving when the coordinator socket path is too long', async () => {
     const longHome = join(app, 'h'.repeat(120))
-    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_HOME: longHome, NAPDEV_COORDINATOR: '1' })
-    await waitForLine(cli, /napdev listening/)
+    const cli = startCli(['next', 'dev', '-p', String(port)], { DOZER_HOME: longHome, DOZER_COORDINATOR: '1' })
+    await waitForLine(cli, /dozer listening/)
     expect(await waitForLine(cli, /socket path too long/))
-      .toMatch(/^napdev: coordinator socket path too long \(\d+ bytes\); running without the machine-wide limit$/)
+      .toMatch(/^dozer: coordinator socket path too long \(\d+ bytes\); running without the machine-wide limit$/)
     expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
     expect(cli.lines.filter((l) => l.includes('socket path too long'))).toHaveLength(1)
   })
@@ -266,6 +266,6 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
   it('unknown commands print usage and exit 1', async () => {
     const cli = startCli(['frobnicate'])
     expect(await exitCode(cli)).toBe(1)
-    expect(cli.lines.join('\n')).toContain('napdev next dev [next dev options]')
+    expect(cli.lines.join('\n')).toContain('dozer next dev [next dev options]')
   })
 })

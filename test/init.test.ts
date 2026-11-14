@@ -10,7 +10,7 @@ afterEach(() => {
 })
 
 function make(files: Record<string, string | object>): string {
-  const root = mkdtempSync(join(tmpdir(), 'napdev-init-'))
+  const root = mkdtempSync(join(tmpdir(), 'dozer-init-'))
   roots.push(root)
   for (const [rel, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, rel)), { recursive: true })
@@ -37,19 +37,19 @@ afterEach(() => vi.restoreAllMocks())
 
 describe('rewriteScript', () => {
   it('rewrites only the bare next dev token', () => {
-    expect(rewriteScript('next dev')).toBe('napdev next dev')
-    expect(rewriteScript('next dev -p 3001')).toBe('napdev next dev -p 3001')
-    expect(rewriteScript('a &&next dev ; b |next dev')).toBe('a &&napdev next dev ; b |napdev next dev')
-    expect(rewriteScript('next dev;echo x')).toBe('napdev next dev;echo x')
-    expect(rewriteScript('(next dev)')).toBe('(napdev next dev)')
-    expect(rewriteScript('next dev&&x')).toBe('napdev next dev&&x')
-    expect(rewriteScript('next dev|tee log')).toBe('napdev next dev|tee log')
-    expect(rewriteScript('(next dev )')).toBe('(napdev next dev )')
-    expect(rewriteScript('x -- next dev')).toBe('x -- napdev next dev')
-    expect(rewriteScript('x --next dev')).toBe('x --napdev next dev')
+    expect(rewriteScript('next dev')).toBe('dozer next dev')
+    expect(rewriteScript('next dev -p 3001')).toBe('dozer next dev -p 3001')
+    expect(rewriteScript('a &&next dev ; b |next dev')).toBe('a &&dozer next dev ; b |dozer next dev')
+    expect(rewriteScript('next dev;echo x')).toBe('dozer next dev;echo x')
+    expect(rewriteScript('(next dev)')).toBe('(dozer next dev)')
+    expect(rewriteScript('next dev&&x')).toBe('dozer next dev&&x')
+    expect(rewriteScript('next dev|tee log')).toBe('dozer next dev|tee log')
+    expect(rewriteScript('(next dev )')).toBe('(dozer next dev )')
+    expect(rewriteScript('x -- next dev')).toBe('x -- dozer next dev')
+    expect(rewriteScript('x --next dev')).toBe('x --dozer next dev')
   })
   it('leaves other commands and already-wrapped scripts alone', () => {
-    for (const s of ['next build', 'next start', 'nextjs dev', 'my-next dev', 'napdev next dev', 'next developer', 'next devx']) {
+    for (const s of ['next build', 'next start', 'nextjs dev', 'my-next dev', 'dozer next dev', 'next developer', 'next devx']) {
       expect(rewriteScript(s)).toBe(s)
     }
   })
@@ -61,10 +61,10 @@ describe('planInit', () => {
     const [c] = await planInit(root, '0.1.0')
     const after = JSON.parse(c!.after)
     expect(after.scripts.dev).toBe(
-      "node a.mjs && NODE_OPTIONS='--max-old-space-size=4096' dotenvx run -- napdev next dev --port ${WEB_PORT:-3000}",
+      "node a.mjs && NODE_OPTIONS='--max-old-space-size=4096' dotenvx run -- dozer next dev --port ${WEB_PORT:-3000}",
     )
     expect(after.scripts.build).toBe('next build')
-    expect(after.devDependencies.napdev).toBe('^0.1.0')
+    expect(after.devDependencies.dozer).toBe('^0.1.0')
   })
 
   it('finds apps through pnpm-workspace.yaml, with comments, quotes and negation', async () => {
@@ -94,7 +94,7 @@ describe('planInit', () => {
     await expect(planInit(root, '0.1.0')).rejects.toThrow('could not read packages from pnpm-workspace.yaml')
     const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     expect(await runInit([], {}, root)).toBe(1)
-    expect(String(err.mock.calls[0]![0])).toBe('napdev: could not read packages from pnpm-workspace.yaml\n')
+    expect(String(err.mock.calls[0]![0])).toBe('dozer: could not read packages from pnpm-workspace.yaml\n')
   })
 
   it('finds apps through npm workspaces (array and {packages})', async () => {
@@ -127,7 +127,7 @@ describe('planInit', () => {
     const root = make({ 'package.json': original })
     const [c] = await planInit(root, '0.1.0')
     expect(c!.after).toBe(
-      '{\n\t"name": "web",\n\t"scripts": {\n\t\t"dev": "napdev next dev"\n\t},\n\t"dependencies": {\n\t\t"next": "15"\n\t},\n\t"devDependencies": {\n\t\t"napdev": "^0.1.0"\n\t}\n}\n',
+      '{\n\t"name": "web",\n\t"scripts": {\n\t\t"dev": "dozer next dev"\n\t},\n\t"dependencies": {\n\t\t"next": "15"\n\t},\n\t"devDependencies": {\n\t\t"dozer": "^0.1.0"\n\t}\n}\n',
     )
   })
 
@@ -136,21 +136,21 @@ describe('planInit', () => {
     const root = make({ 'package.json': original })
     const [c] = await planInit(root, '0.1.0')
     expect(c!.after).toBe(
-      '{\n    "scripts": { "dev": "napdev next dev" },\n    "devDependencies": {\n        "napdev": "^0.1.0",\n        "next": "15",\n        "zod": "3"\n    }\n}',
+      '{\n    "scripts": { "dev": "dozer next dev" },\n    "devDependencies": {\n        "dozer": "^0.1.0",\n        "next": "15",\n        "zod": "3"\n    }\n}',
     )
   })
 
-  it('leaves an existing napdev dependency but still rewrites scripts', async () => {
-    const root = make({ 'package.json': { ...next('w'), devDependencies: { napdev: '^0.0.9' } } })
+  it('leaves an existing dozer dependency but still rewrites scripts', async () => {
+    const root = make({ 'package.json': { ...next('w'), devDependencies: { dozer: '^0.0.9' } } })
     const [c] = await planInit(root, '0.1.0')
-    expect(JSON.parse(c!.after).devDependencies.napdev).toBe('^0.0.9')
-    expect(JSON.parse(c!.after).scripts.dev).toBe('napdev next dev')
+    expect(JSON.parse(c!.after).devDependencies.dozer).toBe('^0.0.9')
+    expect(JSON.parse(c!.after).scripts.dev).toBe('dozer next dev')
   })
 
   it('does nothing for an already-initialized app and skips packages without next', async () => {
     const root = make({
       'package.json': { name: 'r', workspaces: ['apps/*'] },
-      'apps/a/package.json': { ...next('a', 'napdev next dev'), devDependencies: { napdev: '^0.1.0' } },
+      'apps/a/package.json': { ...next('a', 'dozer next dev'), devDependencies: { dozer: '^0.1.0' } },
       'apps/b/package.json': { name: 'b', scripts: { dev: 'next dev' } },
     })
     expect(await planInit(root, '0.1.0')).toEqual([])
@@ -178,7 +178,7 @@ describe('runInit', () => {
     expect(io.out()).toContain('--- apps/web/package.json')
     expect(io.out()).toContain('+++ apps/web/package.json')
     expect(io.out()).toContain('+     "dev": "node a.mjs')
-    expect(io.out()).toContain('Run napdev init --yes to apply.')
+    expect(io.out()).toContain('Run dozer init --yes to apply.')
   })
 
   it('writes with --yes and is idempotent', async () => {
@@ -186,7 +186,7 @@ describe('runInit', () => {
     const io = silence()
     expect(await runInit(['--yes'], {}, root)).toBe(0)
     expect(io.out()).toContain("Run your package manager's install to finish.")
-    expect(JSON.parse(read(root, 'apps/web/package.json')).devDependencies.napdev).toMatch(/^\^\d/)
+    expect(JSON.parse(read(root, 'apps/web/package.json')).devDependencies.dozer).toMatch(/^\^\d/)
     expect(await planInit(root, '0.1.0')).toEqual([])
     const io2 = silence()
     expect(await runInit(['--yes'], {}, root)).toBe(0)
@@ -205,7 +205,7 @@ describe('runInit', () => {
     const io = silence()
     expect(await runInit(['--yes'], {}, root)).toBe(0)
     const web = JSON.parse(read(root, 'apps/web/package.json'))
-    expect(web.scripts).toEqual({ dev: 'napdev next dev', 'dev:https': 'next dev --experimental-https -p 3443' })
+    expect(web.scripts).toEqual({ dev: 'dozer next dev', 'dev:https': 'next dev --experimental-https -p 3443' })
     expect(read(root, 'apps/tls/package.json')).toBe(tls)
     expect(io.out()).toContain('Skipped apps/tls/package.json script "dev": --experimental-https is not supported yet.')
     expect(io.out()).toContain('Skipped apps/web/package.json script "dev:https": --experimental-https is not supported yet.')

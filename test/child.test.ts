@@ -121,7 +121,7 @@ describe('ps failure', () => {
 
 describe('childEnv', () => {
   it('sets the ports, and FORCE_COLOR only on a terminal the user has not configured', () => {
-    expect(childEnv({ A: '1' }, 3000, 51000, false)).toEqual({ A: '1', NAPDEV_PUBLIC_PORT: '3000', PORT: '51000' })
+    expect(childEnv({ A: '1' }, 3000, 51000, false)).toEqual({ A: '1', DOZER_PUBLIC_PORT: '3000', PORT: '51000' })
     expect(childEnv({}, 3000, 51000, true).FORCE_COLOR).toBe('1')
     expect(childEnv({ FORCE_COLOR: '0' }, 3000, 51000, true).FORCE_COLOR).toBe('0')
     expect(childEnv({ NO_COLOR: '1' }, 3000, 51000, true).FORCE_COLOR).toBeUndefined()
@@ -129,8 +129,8 @@ describe('childEnv', () => {
 })
 
 describe('resolveNextBin', () => {
-  it('prefers NAPDEV_NEXT_BIN', () => {
-    expect(resolveNextBin('/x', { NAPDEV_NEXT_BIN: '/y/next' })).toBe('/y/next')
+  it('prefers DOZER_NEXT_BIN', () => {
+    expect(resolveNextBin('/x', { DOZER_NEXT_BIN: '/y/next' })).toBe('/y/next')
   })
   it('throws naming appDir when next is missing', () => {
     expect(() => resolveNextBin('/nonexistent-app-dir', {})).toThrow('/nonexistent-app-dir')

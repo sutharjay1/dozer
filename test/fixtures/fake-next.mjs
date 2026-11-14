@@ -1,4 +1,4 @@
-// Stand-in for `next dev`, used by napdev tests. Not shipped.
+// Stand-in for `next dev`, used by dozer tests. Not shipped.
 import http from 'node:http'
 import { spawn } from 'node:child_process'
 import { randomInt } from 'node:crypto'
@@ -37,7 +37,7 @@ const server = http.createServer((req, res) => {
     const body = Buffer.concat(chunks).toString()
     res.writeHead(200, { 'content-type': 'text/plain' })
     res.end(
-      `fake-next pid=${process.pid} host=${req.headers.host} path=${req.url} public=${process.env.NAPDEV_PUBLIC_PORT ?? ''}` +
+      `fake-next pid=${process.pid} host=${req.headers.host} path=${req.url} public=${process.env.DOZER_PUBLIC_PORT ?? ''}` +
         (req.method === 'POST' ? `\nbody=${body}` : ''),
     )
   })
