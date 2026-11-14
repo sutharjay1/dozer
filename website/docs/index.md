@@ -38,3 +38,5 @@ In testing, an open tab caused 0 page loads during a 90 s sleep.
 - A single app you use all day stays awake, so you save little.
 - A page that sends HTTP requests on a timer (polling, session checks) keeps waking the app.
 - It runs on macOS and Linux only, with Next.js 15 and 16 (14 is best effort).
+
+Install with `pnpm add -D next-dozer`. Source: [git.new/dozer](https://git.new/dozer).

@@ -9,7 +9,7 @@
   <a href="https://dozer-docs.sutharjay3635.workers.dev">Docs</a> ·
   <a href="https://dozer-docs.sutharjay3635.workers.dev/quickstart">Quick start</a> ·
   <a href="https://www.npmjs.com/package/next-dozer">npm</a> ·
-  <a href="https://github.com/sutharjay1/dozer">GitHub</a>
+  <a href="https://git.new/dozer">GitHub</a>
 </p>
 
 <p align="center">

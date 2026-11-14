@@ -4,6 +4,8 @@
 
 It exists because each git worktree (one per AI coding agent session) runs its own `next dev`, and each one holds its memory even when nobody is looking at it: about 563 MiB for a one-page Next.js 16 test app, and 5.1-7.8 GB in Kortix's own measurement of their app on a 24 GB Mac. A sleeping app costs about 47 MiB (the dozer process); the shared coordinator about 45 MiB. The first request after sleep waits for `next dev` to answer: about 1 s on a small Next.js 16 app, 5.8 s on a 47-page Next.js 15 app with Turbopack.
 
+Install: `pnpm add -D next-dozer` (npm package next-dozer; the command is `dozer`). Source: https://git.new/dozer
+
 ## Docs
 
 - [Introduction](https://dozer-docs.sutharjay3635.workers.dev/): the problem, what dozer does, measured costs, when it helps and when it doesn't
