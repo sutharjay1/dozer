@@ -13,28 +13,47 @@ function killGroup(): void {
   try { process.kill(-process.pid, 'SIGKILL') } catch { /* nothing left */ }
 }
 
-/** Live members of this guard's group other than itself (the guard leads it: pgid is its pid). */
-function others(): number[] {
-  let out = ''
-  try { out = execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8' }) } catch { return [] }
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+/**
+ * Live members of this guard's group other than itself (the guard leads it: pgid is its pid), or
+ * null if ps failed. ps lists itself as a member; it has exited by now, so `alive` drops it.
+ */
+function others(): number[] | null {
+  let out: string
+  try {
+    out = execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', timeout: 1_000, maxBuffer: 8 * 1024 * 1024 })
+  } catch {
+    return null
+  }
   const pids: number[] = []
   for (const line of out.split('\n')) {
     const [p, g, st] = line.trim().split(/\s+/)
-    if (!p || Number(g) !== process.pid || Number(p) === process.pid || (st ?? '').startsWith('Z')) continue
-    pids.push(Number(p))
+    const pid = Number(p)
+    if (!p || Number(g) !== process.pid || pid === process.pid || (st ?? '').startsWith('Z') || !alive(pid)) continue
+    pids.push(pid)
   }
   return pids
 }
 
 /**
  * Next has exited: SIGKILL its leftover workers now instead of leaving them to the gate's stop,
- * which can die during its SIGTERM grace. The guard itself survives to report Next's exit code.
+ * which can die during its SIGTERM grace. The guard itself survives to report Next's exit code,
+ * unless ps fails: then it takes the whole group down, itself included.
  */
-function killOthers(): void {
-  for (let i = 0; i < 5; i++) {
+async function killOthers(): Promise<void> {
+  const killed = new Set<number>()
+  const end = Date.now() + 1_000
+  for (;;) {
     const left = others()
-    if (left.length === 0) return
-    for (const pid of left) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
+    if (left === null) return killGroup()
+    const fresh = left.filter((pid) => !killed.has(pid))
+    if (fresh.length === 0 || Date.now() >= end) return
+    for (const pid of fresh) {
+      killed.add(pid)
+      try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
+    }
+    await new Promise((r) => setTimeout(r, 50))
   }
 }
 
@@ -70,9 +89,8 @@ export function runGuard(argv: string[]): Promise<number> {
       process.stdin.destroy()
       child.stdout.destroy()
       child.stderr.destroy()
-      killOthers()
       // resolve once what Next printed has been flushed to the gate
-      process.stdout.write('', () => process.stderr.write('', () => resolve(code)))
+      void killOthers().then(() => process.stdout.write('', () => process.stderr.write('', () => resolve(code))))
     }
     child.once('error', (err) => {
       process.stderr.write(`dozer: could not run next (${err.message})\n`)

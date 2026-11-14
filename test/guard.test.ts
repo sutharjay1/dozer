@@ -1,7 +1,10 @@
 // The guard of the built CLI (test/global-setup.ts builds it), driven directly.
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { GUARD_CLI, stopTree } from '../src/child.js'
 import { findHiddenPort } from '../src/port.js'
 
@@ -9,6 +12,22 @@ const FAKE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.url))
 const started: ChildProcessWithoutNullStreams[] = []
 const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
 const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// `ps` stand-ins put first on the guard's PATH: one counts its runs, one always fails
+const bin = mkdtempSync(join(tmpdir(), 'dozer-guard-ps-'))
+const REAL_PS = execFileSync('sh', ['-c', 'command -v ps'], { encoding: 'utf8' }).trim()
+const COUNT = join(bin, 'count')
+const script = (name: string, body: string) => {
+  const dir = join(bin, name)
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'ps'), `#!/bin/sh\n${body}\n`)
+  chmodSync(join(dir, 'ps'), 0o755)
+  return `${dir}:${process.env.PATH}`
+}
+const COUNTING_PATH = script('counting', `echo x >> "${COUNT}"\nexec "${REAL_PS}" "$@"`)
+const FAILING_PATH = script('failing', 'exit 1')
+
+afterAll(() => rmSync(bin, { recursive: true, force: true }))
 
 afterEach(async () => {
   await Promise.all(started.splice(0).map((g) => stopTree(g.pid!, 500).catch(() => {})))
@@ -64,6 +83,28 @@ describe('guard', () => {
     expect(await exited).toBe(0) // still next's exit code
     for (let i = 0; i < 40 && alive(grandchild); i++) await sleepMs(50)
     expect(alive(grandchild)).toBe(false)
+  })
+
+  it('stops scanning once its group is empty: one or two ps passes', async () => {
+    writeFileSync(COUNT, '')
+    const { g, exited, line } = await guard({ PATH: COUNTING_PATH })
+    const grandchild = Number((await line(/grandchild=(\d+)/))[1])
+    g.kill('SIGTERM') // reaches next only; its grandchild is left for the guard
+    expect(await exited).toBe(0)
+    expect(alive(grandchild)).toBe(false)
+    const passes = readFileSync(COUNT, 'utf8').split('\n').filter(Boolean).length
+    expect(passes).toBeGreaterThanOrEqual(1)
+    expect(passes).toBeLessThanOrEqual(2)
+  })
+
+  it('kills the whole group, itself included, when ps fails', async () => {
+    const { g, exited, line } = await guard({ PATH: FAILING_PATH, FAKE_NEXT_STUBBORN_CHILD: '1' })
+    const grandchild = Number((await line(/grandchild=(\d+)/))[1])
+    g.kill('SIGTERM')
+    await exited // by SIGKILL: next's exit code is lost
+    for (let i = 0; i < 40 && alive(grandchild); i++) await sleepMs(50)
+    expect(alive(grandchild)).toBe(false)
+    expect(alive(g.pid!)).toBe(false)
   })
 
   it('kills its whole group when its stdin ends (the gate died)', async () => {
