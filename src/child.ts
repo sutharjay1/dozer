@@ -47,11 +47,14 @@ export function spawnChild(o: {
 export function waitReady(hiddenPort: number, timeoutMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     let done = false
+    let poll: NodeJS.Timeout | undefined
+    let inflight: http.ClientRequest | undefined
     const finish = (err?: unknown) => {
       if (done) return
       done = true
       clearTimeout(poll)
       clearTimeout(deadline)
+      inflight?.destroy()
       signal.removeEventListener('abort', onAbort)
       if (err === undefined) resolve()
       else reject(err)
@@ -61,13 +64,14 @@ export function waitReady(hiddenPort: number, timeoutMs: number, signal: AbortSi
       () => finish(new Error(`next did not become ready on port ${hiddenPort} within ${timeoutMs}ms`)),
       timeoutMs,
     )
-    let poll: NodeJS.Timeout = setTimeout(() => {}, 0)
     const attempt = () => {
       if (done) return
+      // A connect that is accepted may take seconds to answer while Next compiles; wait it out.
       const req = http.get(
-        { host: '127.0.0.1', port: hiddenPort, path: '/', agent: false, timeout: 500 },
+        { host: '127.0.0.1', port: hiddenPort, path: '/', agent: false, timeout: 5_000 },
         (res) => { res.resume(); finish() },
       )
+      inflight = req
       const retry = () => { req.destroy(); if (!done) poll = setTimeout(attempt, 100) }
       req.once('timeout', retry)
       req.once('error', retry)
@@ -78,18 +82,26 @@ export function waitReady(hiddenPort: number, timeoutMs: number, signal: AbortSi
   })
 }
 
-function ps(args: string[]): Promise<string> {
-  return new Promise((resolve) => {
-    execFile('ps', args, { maxBuffer: 16 * 1024 * 1024 }, (_e, out) => resolve(out ?? ''))
-  })
+export const psRunner = {
+  run(args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile('ps', args, { maxBuffer: 64 * 1024 * 1024 }, (e, out) => {
+        if (e) return reject(new Error(`ps failed: ${e.message}`))
+        // ps always lists at least itself's caller; empty output is never valid.
+        if (!out.trim()) return reject(new Error('ps printed nothing'))
+        resolve(out)
+      })
+    })
+  },
 }
 
 async function groupMembers(pgid: number): Promise<number[]> {
-  const out = await ps(['-axo', 'pid=,pgid='])
+  const out = await psRunner.run(['-A', '-o', 'pid=,pgid=,stat='])
   const pids: number[] = []
   for (const line of out.split('\n')) {
-    const [p, g] = line.trim().split(/\s+/).map(Number)
-    if (p !== undefined && g === pgid && Number.isFinite(p)) pids.push(p)
+    const [p, g, st] = line.trim().split(/\s+/)
+    if (!p || Number(g) !== pgid || (st ?? '').startsWith('Z')) continue
+    pids.push(Number(p))
   }
   return pids
 }
@@ -102,7 +114,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function stopTree(pid: number, termGraceMs = 5_000): Promise<void> {
   if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return
-  const own = Number((await ps(['-o', 'pgid=', '-p', String(process.pid)])).trim())
+  const own = Number((await psRunner.run(['-o', 'pgid=', '-p', String(process.pid)])).trim())
   if (pid === own) return // never signal our own process group
   signalGroup(pid, 'SIGTERM')
   const graceEnd = Date.now() + termGraceMs
@@ -124,11 +136,11 @@ export async function stopTree(pid: number, termGraceMs = 5_000): Promise<void> 
 }
 
 export async function treeRssBytes(pid: number): Promise<number> {
-  const out = await ps(['-axo', 'pgid=,rss='])
+  const out = await psRunner.run(['-A', '-o', 'pgid=,rss=,stat='])
   let kb = 0
   for (const line of out.split('\n')) {
-    const [g, r] = line.trim().split(/\s+/).map(Number)
-    if (g === pid && r !== undefined && Number.isFinite(r)) kb += r
+    const [g, r, st] = line.trim().split(/\s+/)
+    if (Number(g) === pid && !(st ?? '').startsWith('Z') && Number.isFinite(Number(r))) kb += Number(r)
   }
   return kb * 1024
 }

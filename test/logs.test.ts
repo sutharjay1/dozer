@@ -18,6 +18,10 @@ describe('createLogRewriter', () => {
     const rw = createLogRewriter(5412, 3000)
     expect(rw('localhost:54123\n')).toBe('localhost:54123\n')
   })
+  it('only rewrites whole hosts', () => {
+    const rw = createLogRewriter(54123, 3000)
+    expect(rw('10.0.0.0:54123 notlocalhost:54123\n')).toBe('10.0.0.0:54123 notlocalhost:54123\n')
+  })
   it('flush returns the held tail', () => {
     const rw = createLogRewriter(54123, 3000)
     expect(rw('at localhost:54123')).toBe('')

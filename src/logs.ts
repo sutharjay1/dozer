@@ -5,7 +5,7 @@ export interface LogRewriter {
 }
 
 export function createLogRewriter(hiddenPort: number, publicPort: number): LogRewriter {
-  const re = new RegExp(`(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\]):${hiddenPort}(?!\\d)`, 'g')
+  const re = new RegExp(`(?<![\\w.-])(localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[::1\\]):${hiddenPort}(?!\\d)`, 'g')
   const sub = (s: string) => s.replace(re, `$1:${publicPort}`)
   let held = ''
   const rw = ((text: string): string => {

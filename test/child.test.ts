@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { findHiddenPort } from '../src/port.js'
 import {
-  resolveNextBin, spawnChild, stopTree, treeRssBytes, waitReady, type ChildHandle,
+  psRunner, resolveNextBin, spawnChild, stopTree, treeRssBytes, waitReady, type ChildHandle,
 } from '../src/child.js'
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.url))
@@ -81,6 +81,20 @@ describe('child', () => {
   it('exit code is reported when the child crashes', async () => {
     const h = await start({ FAKE_NEXT_CRASH: '1' })
     expect(await h.exited).toBe(1)
+  })
+})
+
+describe('ps failure', () => {
+  afterEach(() => vi.restoreAllMocks())
+  it('stopTree fails closed when ps errors', async () => {
+    const h = await start()
+    vi.spyOn(psRunner, 'run').mockRejectedValue(new Error('ps failed: boom'))
+    await expect(stopTree(h.pid, 100)).rejects.toThrow('ps failed')
+    vi.restoreAllMocks()
+  })
+  it('treeRssBytes rejects when ps prints nothing', async () => {
+    vi.spyOn(psRunner, 'run').mockRejectedValue(new Error('ps printed nothing'))
+    await expect(treeRssBytes(1234)).rejects.toThrow('ps printed nothing')
   })
 })
 
