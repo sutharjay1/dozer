@@ -1,11 +1,11 @@
-import { appendFileSync, chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, linkSync, mkdirSync, renameSync, statSync, unlinkSync } from 'node:fs'
 import net from 'node:net'
 import { join } from 'node:path'
 import { DEFAULTS, loadMachineConfig, napdevHome } from '../config.js'
 import type { GateState } from '../gate.js'
 import { chooseVictims, type Limits } from './policy.js'
 import {
-  encode, lineReader, PROTOCOL_VERSION, socketPath, socketPathUsable, type AppView,
+  encode, lineReader, MAX_LINE_BYTES, PROTOCOL_VERSION, socketPath, socketPathUsable, type AppView,
 } from './protocol.js'
 
 const POLICY_EVERY_MS = 5_000
@@ -91,7 +91,7 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
       const view: AppView = {
         id: String(app.id ?? ''), name: String(app.name ?? ''), cwd: String(app.cwd ?? ''),
         publicPort: num(app.publicPort, 0), pid: num(app.pid, 0), pinned: app.pinned === true,
-        state: 'asleep', inFlight: 0, lastHttpAt: null, rssBytes: 0,
+        state: 'asleep', inFlight: 0, lastHttpAt: null, lastActiveAt: null, rssBytes: 0,
       }
       gates.set(socket, { key: String(nextKey++), socket, view, evictSent: false })
       armLinger()
@@ -100,13 +100,19 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
       return
     }
     if (msg.t === 'report' && conn) {
-      const state = STATES.includes(msg.state as GateState) ? (msg.state as GateState) : conn.view.state
-      if (state !== conn.view.state) conn.evictSent = false
+      const old = conn.view
+      const time = (v: unknown, was: number | null) => (v === null ? null : num(v, was ?? 0))
       conn.view = {
-        ...conn.view, state, inFlight: num(msg.inFlight, 0),
-        lastHttpAt: msg.lastHttpAt === null ? null : num(msg.lastHttpAt, conn.view.lastHttpAt ?? 0),
-        rssBytes: num(msg.rssBytes, conn.view.rssBytes),
+        ...old,
+        state: STATES.includes(msg.state as GateState) ? (msg.state as GateState) : old.state,
+        inFlight: num(msg.inFlight, 0),
+        lastHttpAt: time(msg.lastHttpAt, old.lastHttpAt),
+        lastActiveAt: time(msg.lastActiveAt, old.lastActiveAt),
+        rssBytes: num(msg.rssBytes, old.rssBytes),
       }
+      // a gate that refused an eviction reports fresher facts; decide again on them
+      const v = conn.view
+      if (v.state !== old.state || v.inFlight !== old.inFlight || v.lastActiveAt !== old.lastActiveAt) conn.evictSent = false
       enforce()
       return
     }
@@ -131,7 +137,11 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
   const server = net.createServer((socket) => {
     sockets.add(socket)
     socket.setEncoding('utf8')
-    socket.on('data', lineReader((m) => onMessage(socket, m), (line) => log(`unparseable line ${JSON.stringify(line.slice(0, 200))}`)))
+    socket.on('data', lineReader(
+      (m) => onMessage(socket, m),
+      (line) => log(`unparseable line ${JSON.stringify(line.slice(0, 200))}`),
+      () => { log(`line over ${MAX_LINE_BYTES} bytes; dropping the connection`); socket.destroy() },
+    ))
     socket.on('error', () => {})
     socket.on('close', () => {
       sockets.delete(socket)
@@ -168,6 +178,10 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
     return 1
   }
   try { chmodSync(path, 0o600) } catch { /* umask already did it */ }
+  const mine = statSync(path)
+  const isMine = () => {
+    try { const st = statSync(path); return st.ino === mine.ino && st.dev === mine.dev } catch { return false }
+  }
   server.on('error', (e) => log(`server error: ${e.message}`))
   log(`start pid=${process.pid} maxAwake=${limits.maxAwake} memoryBudgetBytes=${limits.memoryBudgetBytes} graceMs=${limits.graceMs}`)
 
@@ -183,8 +197,18 @@ export async function runCoordinator(env: NodeJS.ProcessEnv): Promise<number> {
     clearTimeout(linger)
     for (const sig of ['SIGTERM', 'SIGINT'] as const) process.off(sig, onSignal)
     for (const s of sockets) s.destroy()
+    // closing unlinks the path, whoever it belongs to now: keep a replacement aside and put it back
+    let kept: string | null = null
+    if (!isMine() && existsSync(path)) {
+      kept = `${path}.${process.pid}.keep`
+      try { linkSync(path, kept) } catch { kept = null }
+    }
     await new Promise<void>((r) => server.close(() => r()))
-    try { unlinkSync(path) } catch { /* server.close removed it */ }
+    if (kept) {
+      try { renameSync(kept, path) } catch { /* it changed again; leave it */ }
+    } else if (isMine()) {
+      try { unlinkSync(path) } catch { /* gone */ }
+    }
     log(`exit (${why})`)
     finished(0)
   }

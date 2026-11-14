@@ -144,6 +144,51 @@ describe('coordinator', { timeout: 30_000 }, () => {
     await vi.waitFor(async () => expect((await list())[0]!.rssBytes).toBeGreaterThan(0), { timeout: 8_000, interval: 100 })
   })
 
+  it('never evicts an app while a request is in flight, and evicts it once the request ends and grace passes', async () => {
+    const a = await startCli('a')
+    const b = await startCli('b')
+    await registered(2)
+    const held = new AbortController()
+    const res = await fetch(`http://localhost:${a.port}/stream`, { signal: held.signal })
+    const reader = res.body!.getReader()
+    await reader.read() // the stream is open and counted in flight
+    await sleepMs(1_200) // past grace: only inFlight protects A now
+    // B stays in use (inside grace), so A is the only app the policy could pick
+    let busy = true
+    const keepBusy = (async () => { while (busy) { await get(b); await sleepMs(200) } })()
+    try {
+      await sleepMs(6_000) // longer than one policy tick
+      expect(states(await list())).toEqual({ a: 'awake', b: 'awake' })
+      expect((await reader.read()).done).toBe(false) // still streaming
+      held.abort()
+      await reader.read().catch(() => {})
+      const ended = Date.now()
+      await vi.waitFor(async () => expect(states(await list())).toEqual({ a: 'asleep', b: 'awake' }),
+        { timeout: 10_000, interval: 100 })
+      expect(Date.now() - ended).toBeGreaterThanOrEqual(900)
+    } finally {
+      busy = false
+      await keepBusy
+    }
+  })
+
+  it('an app woken from the command line gets grace; the other one is evicted', async () => {
+    const a = await startCli('a')
+    await startCli('b')
+    const apps = await registered(2)
+    expect((await get(a)).status).toBe(200)
+    await sleepMs(1_200)
+    const b = apps.find((v) => v.cwd.endsWith('-b'))!
+    expect(await askCoordinator({ t: 'wake', target: b.id }, home)).toEqual({ t: 'ok', count: 1 })
+    await vi.waitFor(async () => expect(states(await list())).toEqual({ a: 'asleep', b: 'awake' }),
+      { timeout: 10_000, interval: 100 })
+    await sleepMs(1_500)
+    const view = (await list()).find((v) => v.id === b.id)!
+    expect(view.state).toBe('awake')
+    expect(view.lastHttpAt).toBeNull()
+    expect(view.lastActiveAt).toBeGreaterThan(0)
+  })
+
   it('sleeps and wakes on request from the command line', async () => {
     const a = await startCli('a')
     const [view] = await registered(1)
@@ -173,9 +218,25 @@ describe('coordinator', { timeout: 30_000 }, () => {
     const app = { id: 'x', name: 'x', cwd: '/x', publicPort: 1, pid: process.pid, pinned: false }
     const client = await connectGate({ t: 'hello', v: 99, app }, home)
     expect(client.connected).toBe(false)
-    client.report({ t: 'report', state: 'awake', inFlight: 0, lastHttpAt: null, rssBytes: 0 }) // no-op
+    client.report({ t: 'report', state: 'awake', inFlight: 0, lastHttpAt: null, lastActiveAt: null, rssBytes: 0 }) // no-op
     client.close()
     expect(await registered(1)).toHaveLength(1)
+  })
+
+  it('a gate whose first connect failed registers once a coordinator appears', async () => {
+    // imported from src, connectGate cannot start a daemon (it would run src/coordinator/client.ts)
+    const app = { id: 'late', name: 'late', cwd: '/late', publicPort: 1, pid: process.pid, pinned: false }
+    const client = await connectGate({ t: 'hello', v: PROTOCOL_VERSION, app }, home)
+    try {
+      expect(client.connected).toBe(false)
+      const d = spawn(process.execPath, [CLI, '__coordinator'], { env: { ...process.env, NAPDEV_HOME: home }, stdio: 'ignore' })
+      d.unref()
+      await vi.waitFor(() => expect(daemonPids()).toHaveLength(1))
+      await vi.waitFor(() => expect(client.connected).toBe(true), { timeout: 8_000, interval: 100 })
+      expect((await list()).map((v) => v.id)).toEqual(['late'])
+    } finally {
+      client.close()
+    }
   })
 
   it('a gate rejected by its coordinator still serves', async () => {
@@ -220,6 +281,42 @@ describe('coordinator', { timeout: 30_000 }, () => {
     expect(code).toBe(0)
     expect(await registered(1)).toHaveLength(1)
     expect(daemonPids()).toHaveLength(1)
+  })
+
+  it('leaves a socket file that is no longer its own', async () => {
+    await startCli('a')
+    await registered(1)
+    const [pid] = daemonPids()
+    const path = socketPath(home)
+    rmSync(path)
+    const conns = new Set<net.Socket>()
+    const other = net.createServer((s) => {
+      conns.add(s)
+      s.on('error', () => {})
+      s.end(JSON.stringify({ t: 'ok', count: 42 }) + '\n')
+    })
+    await new Promise<void>((r) => other.listen(path, () => r()))
+    try {
+      process.kill(pid!, 'SIGTERM')
+      await vi.waitFor(() => expect(alive(pid!)).toBe(false), { timeout: 5_000 })
+      expect(existsSync(path)).toBe(true)
+      expect(await askCoordinator({ t: 'list' }, home)).toEqual({ t: 'ok', count: 42 })
+    } finally {
+      for (const c of conns) c.destroy()
+      await new Promise<void>((r) => other.close(() => r()))
+    }
+  })
+
+  it('drops a connection that sends an over-long line', async () => {
+    await startCli('a')
+    await registered(1)
+    const s = net.connect(socketPath(home))
+    const closed = new Promise((r) => s.once('close', r))
+    s.on('error', () => {})
+    s.write('x'.repeat(70 * 1024))
+    await closed
+    expect(readFileSync(join(home, 'coordinator.log'), 'utf8')).toMatch(/line over 65536 bytes/)
+    expect(await registered(1)).toHaveLength(1)
   })
 
   it('a stale socket file is replaced', async () => {

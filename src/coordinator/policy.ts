@@ -4,8 +4,8 @@ export interface Limits { maxAwake: number; memoryBudgetBytes: number | null; gr
 
 /**
  * The apps to sleep, in order. Over the limit means more than `maxAwake` apps awake or waking, or
- * their RSS above the budget. Only awake, unpinned, idle apps past the grace period qualify; when
- * none does the limit is left exceeded (it is soft).
+ * their RSS above the budget. Only awake, unpinned, idle apps whose last activity (request or wake)
+ * is past the grace period qualify, oldest first; when none does the limit is left exceeded (it is soft).
  */
 export function chooseVictims(apps: AppView[], limits: Limits, now: number): string[] {
   const up = apps.filter((a) => a.state === 'awake' || a.state === 'waking')
@@ -15,8 +15,8 @@ export function chooseVictims(apps: AppView[], limits: Limits, now: number): str
 
   const candidates = up
     .filter((a) => a.state === 'awake' && !a.pinned && a.inFlight === 0
-      && (a.lastHttpAt === null || now - a.lastHttpAt >= limits.graceMs))
-    .sort((x, y) => (x.lastHttpAt ?? -Infinity) - (y.lastHttpAt ?? -Infinity))
+      && (a.lastActiveAt === null || now - a.lastActiveAt >= limits.graceMs))
+    .sort((x, y) => (x.lastActiveAt ?? -Infinity) - (y.lastActiveAt ?? -Infinity))
 
   const victims: string[] = []
   for (const a of candidates) {

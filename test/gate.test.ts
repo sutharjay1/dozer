@@ -67,6 +67,25 @@ describe('Gate', () => {
     expect(g.snapshot().state).toBe('asleep')
   })
 
+  it('reports awakeAt only while awake', async () => {
+    vi.setSystemTime(5_000)
+    expect(g.snapshot().awakeAt).toBeNull()
+    await g.ensureAwake()
+    expect(g.snapshot().awakeAt).toBe(5_000)
+    await g.sleep('manual')
+    expect(g.snapshot().awakeAt).toBeNull()
+  })
+
+  it('calls onActivity only when requests in flight go 0 to 1 and 1 to 0', async () => {
+    const onActivity = vi.fn<NonNullable<GateDeps['onActivity']>>()
+    const gate = new Gate({ ...deps, onActivity })
+    await gate.ensureAwake()
+    gate.noteHttpStart(); gate.noteHttpStart(); gate.noteHttpEnd()
+    expect(onActivity.mock.calls.map(([s]) => s.inFlight)).toEqual([1])
+    gate.noteHttpEnd(); gate.noteHttpEnd()
+    expect(onActivity.mock.calls.map(([s]) => s.inFlight)).toEqual([1, 0])
+  })
+
   it('noteHttpEnd never drives inFlight below 0', async () => {
     await g.ensureAwake(); g.noteHttpEnd(); g.noteHttpEnd()
     expect(g.snapshot().inFlight).toBe(0)

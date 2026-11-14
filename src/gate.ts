@@ -17,6 +17,8 @@ export interface GateSnapshot {
   state: GateState; inFlight: number; lastHttpAt: number | null
   childPid: number | null; hiddenPort: number | null; failedWakes: number
   strays: number
+  /** When the current child became ready; null unless awake. */
+  awakeAt: number | null
 }
 
 export type GateErrorContext = 'late-stop' | 'idle-stop' | 'on-change'
@@ -26,6 +28,8 @@ export interface GateDeps {
   startChild(signal: AbortSignal): Promise<ChildHandle>
   stopChild(child: ChildHandle): Promise<void>
   onChange(snapshot: GateSnapshot, reason?: SleepReason): void
+  /** Called when requests in flight go from 0 to 1 or from 1 to 0. */
+  onActivity?(snapshot: GateSnapshot): void
   now?(): number
   onError?(error: unknown, context: GateErrorContext): void
 }
@@ -69,6 +73,7 @@ export class Gate {
       state: this.state, inFlight: this.inFlight, lastHttpAt: this.lastHttpAt,
       childPid: this.child?.pid ?? null, hiddenPort: this.child?.hiddenPort ?? null,
       failedWakes: this.failedWakes, strays: this.strays.size,
+      awakeAt: this.state === 'awake' ? this.awakeAt : null,
     }
   }
 
@@ -114,16 +119,27 @@ export class Gate {
 
   // --- activity -----------------------------------------------------------
 
+  private emitActivity(): void {
+    try {
+      this.deps.onActivity?.(this.snapshot())
+    } catch (err) {
+      this.reportError(err, 'on-change')
+    }
+  }
+
   noteHttpStart(): void {
     this.inFlight++
     this.lastHttpAt = this.now()
     this.armIdle()
+    if (this.inFlight === 1) this.emitActivity()
   }
 
   noteHttpEnd(): void {
-    if (this.inFlight > 0) this.inFlight--
+    const was = this.inFlight
+    if (was > 0) this.inFlight--
     this.lastHttpAt = this.now()
     this.armIdle()
+    if (was === 1) this.emitActivity()
   }
 
   noteServerFrame(): void {

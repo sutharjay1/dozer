@@ -42,7 +42,8 @@ let port: number
 function startCli(args: string[], env: Record<string, string> = {}): Cli {
   const proc = spawn(process.execPath, [CLI, ...args], {
     cwd: app,
-    env: { ...process.env, NAPDEV_NEXT_BIN: FAKE, NAPDEV_HOME: home, ...env },
+    // these tests are about one gate; the machine-wide coordinator is covered in coordinator.test.ts
+    env: { ...process.env, NAPDEV_NEXT_BIN: FAKE, NAPDEV_HOME: home, NAPDEV_COORDINATOR: '0', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   const cli: Cli = {
@@ -198,6 +199,16 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
     const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_NEXT_BIN: '' })
     expect(await exitCode(cli)).toBe(1)
     expect(cli.lines.some((l) => l.startsWith('napdev: could not find next in '))).toBe(true)
+  })
+
+  it('says so once and keeps serving when the coordinator socket path is too long', async () => {
+    const longHome = join(app, 'h'.repeat(120))
+    const cli = startCli(['next', 'dev', '-p', String(port)], { NAPDEV_HOME: longHome, NAPDEV_COORDINATOR: '1' })
+    await waitForLine(cli, /napdev listening/)
+    expect(await waitForLine(cli, /socket path too long/))
+      .toMatch(/^napdev: coordinator socket path too long \(\d+ bytes\); running without the machine-wide limit$/)
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
+    expect(cli.lines.filter((l) => l.includes('socket path too long'))).toHaveLength(1)
   })
 
   it('unknown commands print usage and exit 1', async () => {

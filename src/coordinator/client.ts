@@ -62,7 +62,7 @@ async function register(hello: Hello, home: string, onLine: (m: Record<string, u
           if (settled) return onLine(m)
           if (m.t === 'welcome') { settled = true; clearTimeout(t); resolve({ socket }) }
           if (m.t === 'reject') { settled = true; clearTimeout(t); socket.destroy(); resolve({ rejected: true }) }
-        }))
+        }, undefined, () => socket.destroy()))
         socket.once('close', () => { if (!settled) { clearTimeout(t); resolve(null) } })
         socket.write(encode(hello))
       })
@@ -76,7 +76,10 @@ async function register(hello: Hello, home: string, onLine: (m: Record<string, u
   }
 }
 
-/** Registers a gate. Never rejects: without a coordinator the gate runs with the idle rule only. */
+/**
+ * Registers a gate. Never rejects: without a coordinator the gate runs with the idle rule only,
+ * trying again every 5 s unless the coordinator rejected it or the socket path is unusable.
+ */
 export async function connectGate(hello: Hello, home: string): Promise<CoordinatorClient> {
   const listeners: Array<(m: CoordMsg) => void> = []
   let socket: net.Socket | null = null
@@ -100,9 +103,9 @@ export async function connectGate(hello: Hello, home: string): Promise<Coordinat
     })
   }
 
-  // after an established link drops: try again every 5 s, re-sending hello
+  // after a failed connect or a dropped link: try again every 5 s, re-sending hello
   const scheduleReconnect = () => {
-    if (closed) return
+    if (closed || !socketPathUsable(socketPath(home))) return
     retry = setTimeout(async () => {
       const out = await register(hello, home, onLine).catch(() => null)
       if (closed) { if (out && 'socket' in out) out.socket.destroy(); return }
@@ -128,6 +131,7 @@ export async function connectGate(hello: Hello, home: string): Promise<Coordinat
     },
   }
   if (first && 'socket' in first) adopt(first.socket)
+  else if (!first) scheduleReconnect()
   return client
 }
 
@@ -145,7 +149,7 @@ export async function askCoordinator(msg: CliMsg, home: string): Promise<CliRepl
     socket.on('close', () => finish(null))
     socket.on('data', lineReader((m) => {
       if (m.t === 'apps' || m.t === 'ok') finish(m as CliReply)
-    }))
+    }, undefined, () => finish(null)))
     socket.write(encode(msg))
   })
 }
