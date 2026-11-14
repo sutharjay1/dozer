@@ -12,14 +12,19 @@ export interface ChildLauncher {
 
 export function createChildLauncher(o: {
   nextBin: string; cwd: string; env: NodeJS.ProcessEnv; passthrough: string[]
-  publicPort: number; onOutput(text: string): void
+  publicPort: number
+  /** Output of the child on `hiddenPort`; several children can briefly overlap (a late stop). */
+  onOutput(text: string, hiddenPort: number): void
+  /** Called right after each spawn, before any of its output arrives. */
+  onSpawn?(child: ChildHandle): void
 }): ChildLauncher {
   return {
     async startChild(signal) {
       signal.throwIfAborted()
       const hiddenPort = await findHiddenPort()
       signal.throwIfAborted()
-      const child = spawnChild({ ...o, hiddenPort })
+      const child = spawnChild({ ...o, hiddenPort, onOutput: (text) => o.onOutput(text, hiddenPort) })
+      o.onSpawn?.(child)
       try {
         await Promise.race([
           waitReady(hiddenPort, READY_LIMIT_MS, signal),
