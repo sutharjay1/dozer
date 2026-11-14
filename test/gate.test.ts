@@ -15,6 +15,7 @@ let deps: {
   startChild: ReturnType<typeof vi.fn<GateDeps['startChild']>>
   stopChild: ReturnType<typeof vi.fn<GateDeps['stopChild']>>
   onChange: ReturnType<typeof vi.fn<GateDeps['onChange']>>
+  onError: ReturnType<typeof vi.fn<NonNullable<GateDeps['onError']>>>
 }
 let g: Gate
 
@@ -26,6 +27,7 @@ beforeEach(() => {
     startChild: vi.fn<GateDeps['startChild']>(async () => child.handle),
     stopChild: vi.fn<GateDeps['stopChild']>(async () => {}),
     onChange: vi.fn<GateDeps['onChange']>(),
+    onError: vi.fn<NonNullable<GateDeps['onError']>>(),
   }
   g = new Gate(deps)
 })
@@ -143,7 +145,9 @@ describe('Gate', () => {
   })
 
   it('sleep() during waking aborts the start', async () => {
-    deps.startChild.mockReturnValue(new Promise(() => {}))
+    deps.startChild.mockImplementation((signal) => new Promise((_, rej) => {
+      signal.addEventListener('abort', () => rej(new Error('aborted')))
+    }))
     const p = g.ensureAwake().catch((e) => e)
     await vi.advanceTimersByTimeAsync(0)
     await g.sleep('evicted')
@@ -181,5 +185,92 @@ describe('Gate', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(unhandled).not.toHaveBeenCalled()
     } finally { process.off('unhandledRejection', unhandled) }
+  })
+
+  it('reports a late child whose stop fails, keeps it as a stray, and retries on the next sleep', async () => {
+    let resolve!: (c: ChildHandle) => void
+    deps.startChild.mockReturnValue(new Promise((r) => { resolve = r }))
+    const p = g.ensureAwake().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(120_000); await p
+    const boom = new Error('survived')
+    deps.stopChild.mockRejectedValueOnce(boom)
+    resolve(child.handle); await vi.advanceTimersByTimeAsync(0)
+    expect(deps.onError).toHaveBeenCalledWith(boom, 'late-stop')
+    expect(g.snapshot().strays).toBe(1)
+    await g.sleep('exit')
+    expect(deps.stopChild).toHaveBeenCalledTimes(2)
+    expect(deps.stopChild).toHaveBeenLastCalledWith(child.handle)
+    expect(g.snapshot().strays).toBe(0)
+  })
+
+  it('routes a failed idle stop through onError', async () => {
+    await g.ensureAwake()
+    const boom = new Error('survived')
+    deps.stopChild.mockRejectedValueOnce(boom)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(deps.onError).toHaveBeenCalledWith(boom, 'idle-stop')
+  })
+
+  it('ensureAwake during a pending stop waits and wakes a fresh child', async () => {
+    const second = fakeChild(4200, 222)
+    deps.startChild.mockResolvedValueOnce(child.handle).mockResolvedValueOnce(second.handle)
+    await g.ensureAwake()
+    let finishStop!: () => void
+    deps.stopChild.mockReturnValueOnce(new Promise<void>((r) => { finishStop = r }))
+    const sleeping = g.sleep('manual')
+    await vi.advanceTimersByTimeAsync(0)
+    g.noteHttpStart()
+    const p = g.ensureAwake()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(deps.startChild).toHaveBeenCalledTimes(1)
+    finishStop(); await sleeping
+    expect(await p).toBe(4200)
+    expect(deps.startChild).toHaveBeenCalledTimes(2)
+  })
+
+  it('ensureAwake during a failing stop returns the still-current child port', async () => {
+    await g.ensureAwake()
+    let failStop!: (e: Error) => void
+    deps.stopChild.mockReturnValueOnce(new Promise<void>((_, r) => { failStop = r }))
+    const sleeping = g.sleep('manual').catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    const p = g.ensureAwake()
+    failStop(new Error('survived'))
+    expect(await sleeping).toBeInstanceOf(Error)
+    expect(await p).toBe(4100)
+    expect(deps.startChild).toHaveBeenCalledTimes(1)
+  })
+
+  it('sleep() during waking does not resolve until the aborted start has settled', async () => {
+    let rejectStart!: (e: Error) => void
+    deps.startChild.mockReturnValue(new Promise((_, rej) => { rejectStart = rej }))
+    const p = g.ensureAwake().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    let done = false
+    const sleeping = g.sleep('evicted').then(() => { done = true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(g.snapshot().state).toBe('asleep'); expect(done).toBe(false)
+    rejectStart(new Error('aborted')); await sleeping
+    expect(done).toBe(true); await p
+  })
+
+  it('sleep() during waking waits for a late handle to be stopped', async () => {
+    let resolveStart!: (c: ChildHandle) => void
+    deps.startChild.mockReturnValue(new Promise((r) => { resolveStart = r }))
+    const p = g.ensureAwake().catch((e) => e)
+    await vi.advanceTimersByTimeAsync(0)
+    let done = false
+    const sleeping = g.sleep('evicted').then(() => { done = true })
+    await vi.advanceTimersByTimeAsync(0); expect(done).toBe(false)
+    resolveStart(child.handle); await sleeping
+    expect(deps.stopChild).toHaveBeenCalledWith(child.handle); await p
+  })
+
+  it('a throwing onChange does not break the wake', async () => {
+    const boom = new Error('listener')
+    deps.onChange.mockImplementation((snap) => { if (snap.state === 'awake') throw boom })
+    expect(await g.ensureAwake()).toBe(4100)
+    expect(deps.onError).toHaveBeenCalledWith(boom, 'on-change')
+    expect(g.snapshot().state).toBe('awake')
   })
 })

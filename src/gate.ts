@@ -16,7 +16,10 @@ export class WakeFailedError extends Error {
 export interface GateSnapshot {
   state: GateState; inFlight: number; lastHttpAt: number | null
   childPid: number | null; hiddenPort: number | null; failedWakes: number
+  strays: number
 }
+
+export type GateErrorContext = 'late-stop' | 'idle-stop' | 'on-change'
 
 export interface GateDeps {
   config: AppConfig
@@ -24,6 +27,7 @@ export interface GateDeps {
   stopChild(child: ChildHandle): Promise<void>
   onChange(snapshot: GateSnapshot, reason?: SleepReason): void
   now?(): number
+  onError?(error: unknown, context: GateErrorContext): void
 }
 
 interface Wake {
@@ -31,6 +35,7 @@ interface Wake {
   settled: boolean
   timer: NodeJS.Timeout | undefined
   promise: Promise<number>
+  started: Promise<void>
   reject(err: unknown): void
 }
 
@@ -46,6 +51,7 @@ export class Gate {
   private lastFailureAt: number | null = null
   private wake: Wake | null = null
   private sleeping: Promise<void> | null = null
+  private strays = new Set<ChildHandle>()
   private idleTimer: NodeJS.Timeout | undefined
 
   constructor(private readonly deps: GateDeps) {}
@@ -56,13 +62,38 @@ export class Gate {
     return {
       state: this.state, inFlight: this.inFlight, lastHttpAt: this.lastHttpAt,
       childPid: this.child?.pid ?? null, hiddenPort: this.child?.hiddenPort ?? null,
-      failedWakes: this.failedWakes,
+      failedWakes: this.failedWakes, strays: this.strays.size,
     }
   }
 
+  private reportError(error: unknown, context: GateErrorContext): void {
+    try {
+      if (this.deps.onError) this.deps.onError(error, context)
+      else process.stderr.write(`napdev: ${context}: ${(error as Error)?.message ?? String(error)}\n`)
+    } catch { /* reporting must never throw */ }
+  }
+
   private emit(reason?: SleepReason): void {
-    if (reason === undefined) this.deps.onChange(this.snapshot())
-    else this.deps.onChange(this.snapshot(), reason)
+    try {
+      if (reason === undefined) this.deps.onChange(this.snapshot())
+      else this.deps.onChange(this.snapshot(), reason)
+    } catch (err) {
+      this.reportError(err, 'on-change')
+    }
+  }
+
+  private async stopStray(handle: ChildHandle): Promise<void> {
+    try {
+      await this.deps.stopChild(handle)
+      this.strays.delete(handle)
+    } catch (err) {
+      this.strays.add(handle)
+      this.reportError(err, 'late-stop')
+    }
+  }
+
+  private async retryStrays(): Promise<void> {
+    for (const handle of [...this.strays]) await this.stopStray(handle)
   }
 
   // --- activity -----------------------------------------------------------
@@ -106,12 +137,20 @@ export class Gate {
     this.idleTimer = undefined
     if (this.state !== 'awake' || this.inFlight > 0) return // re-armed when inFlight returns to 0
     if (this.now() - this.lastActivity() < this.deps.config.idleMs) return this.armIdle()
-    this.sleep('idle').catch(() => this.armIdle(this.deps.config.idleMs))
+    this.sleep('idle').catch((err) => {
+      this.reportError(err, 'idle-stop')
+      this.armIdle(this.deps.config.idleMs)
+    })
   }
 
   // --- waking -------------------------------------------------------------
 
   ensureAwake(): Promise<number> {
+    if (this.sleeping) {
+      // a stop is in progress: wait for it, then wake fresh (or reuse the old child if the stop failed)
+      const again = () => this.ensureAwake()
+      return this.sleeping.then(again, again)
+    }
     if (this.state === 'awake' && this.child) return Promise.resolve(this.child.hiddenPort)
     if (this.state === 'waking' && this.wake) return this.wake.promise
     if (this.failedWakes >= DEFAULTS.maxFailedWakes && this.lastFailureAt !== null
@@ -127,7 +166,7 @@ export class Gate {
     let rejectOuter!: (err: unknown) => void
     let resolveOuter!: (port: number) => void
     const promise = new Promise<number>((res, rej) => { resolveOuter = res; rejectOuter = rej })
-    const wake: Wake = { controller, settled: false, timer: undefined, promise, reject: rejectOuter }
+    const wake: Wake = { controller, settled: false, timer: undefined, promise, started: Promise.resolve(), reject: rejectOuter }
     this.wake = wake
     this.state = 'waking'
     this.emit()
@@ -150,12 +189,10 @@ export class Gate {
       fail(new WakeTimeoutError(`next did not become ready within ${this.deps.config.wakeTimeoutMs}ms`))
     }, this.deps.config.wakeTimeoutMs)
 
-    const stopLate = (handle: ChildHandle) => { this.deps.stopChild(handle).catch(() => {}) }
-
-    Promise.resolve()
+    wake.started = Promise.resolve()
       .then(() => this.deps.startChild(controller.signal))
-      .then((handle) => {
-        if (wake.settled) { stopLate(handle); return }
+      .then(async (handle) => {
+        if (wake.settled) { await this.stopStray(handle); return }
         wake.settled = true
         clearTimeout(wake.timer)
         this.wake = null
@@ -185,7 +222,12 @@ export class Gate {
 
   // --- sleeping -----------------------------------------------------------
 
-  sleep(reason: SleepReason): Promise<void> {
+  async sleep(reason: SleepReason): Promise<void> {
+    await this.retryStrays()
+    return this.sleepOnce(reason)
+  }
+
+  private async sleepOnce(reason: SleepReason): Promise<void> {
     if (this.state === 'asleep') return Promise.resolve()
     if (this.state === 'waking' && this.wake) {
       const wake = this.wake
@@ -196,7 +238,8 @@ export class Gate {
       this.state = 'asleep'
       this.emit(reason)
       wake.reject(new WakeFailedError(`wake aborted (${reason})`))
-      return Promise.resolve()
+      await wake.started
+      return
     }
     if (this.sleeping) return this.sleeping
     const handle = this.child!
