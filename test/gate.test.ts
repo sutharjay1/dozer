@@ -216,6 +216,7 @@ describe('Gate', () => {
     deps.stopChild.mockRejectedValueOnce(new Error('survived'))
     await expect(g.sleep('manual')).rejects.toThrow('survived')
     expect(g.snapshot().state).toBe('awake'); expect(g.snapshot().childPid).toBe(111)
+    expect(deps.onChange).toHaveBeenLastCalledWith(expect.objectContaining({ state: 'awake', childPid: 111 }))
     await g.sleep('manual')
     expect(deps.stopChild).toHaveBeenCalledTimes(2); expect(g.snapshot().state).toBe('asleep')
   })

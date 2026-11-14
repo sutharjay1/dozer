@@ -1,6 +1,7 @@
 import type http from 'node:http'
 import type net from 'node:net'
 import { fileURLToPath } from 'node:url'
+import type { ChildHandle } from '../../src/child.js'
 import { Gate, type GateState } from '../../src/gate.js'
 import type { AppConfig } from '../../src/config.js'
 import { createChildLauncher } from '../../src/launch.js'
@@ -24,6 +25,8 @@ export interface GateOnFakeNext {
 export async function startGateOnFakeNext(
   env: Record<string, string> = {},
   config: Partial<AppConfig> = {},
+  /** Wraps the real stop, e.g. to make one fail. */
+  wrapStop?: (child: ChildHandle, stop: (child: ChildHandle) => Promise<void>) => Promise<void>,
 ): Promise<GateOnFakeNext> {
   const tail = new LogTail()
   let launcher: ReturnType<typeof createChildLauncher> | null = null
@@ -32,12 +35,11 @@ export async function startGateOnFakeNext(
   const gate = new Gate({
     config: { idleMs: 60_000, wakeTimeoutMs: 10_000, pin: false, ...config },
     startChild: (signal) => launcher!.startChild(signal),
-    stopChild: (child) => launcher!.stopChild(child),
+    stopChild: (child) => wrapStop ? wrapStop(child, (c) => launcher!.stopChild(c)) : launcher!.stopChild(child),
     onChange: (snap) => {
-      if (snap.state === last) return
-      last = snap.state
       if (snap.state === 'awake') sockets!.onWake(snap.hiddenPort!)
-      else if (snap.state === 'asleep') sockets!.onSleep()
+      else if (snap.state === 'asleep' && last !== 'asleep') sockets!.onSleep()
+      last = snap.state
     },
     onError: () => {},
   })

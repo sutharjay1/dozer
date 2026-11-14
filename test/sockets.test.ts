@@ -136,6 +136,32 @@ describe('SocketHub', () => {
     await vi.waitFor(() => expect(sockets.browserCount()).toBe(0))
   })
 
+  it('tabs held during a stop that fails get RELOAD_FRAME then 1012 and reconnect to the surviving server', async () => {
+    let fail = true
+    let hub: { browsers: Set<{ upstream: WebSocket | null }> } | null = null
+    h = await startGateOnFakeNext({}, {}, async (child, stop) => {
+      if (!fail) return stop(child)
+      fail = false
+      // the attempt drops the upstream sockets, then the tree survives
+      for (const b of hub!.browsers) b.upstream?.terminate()
+      await sleepMs(200)
+      throw new Error('survived')
+    })
+    hub = h.sockets as unknown as typeof hub
+    const { url, wsUrl, gate } = h
+    await fetch(url)
+    const ws = await open(wsUrl)
+    await nextMessage(ws)
+    const frame = nextMessage(ws)
+    const closed = once(ws, 'close')
+    await expect(gate.sleep('manual')).rejects.toThrow('survived')
+    expect(gate.snapshot().state).toBe('awake')
+    expect(await frame).toBe(RELOAD_FRAME)
+    expect((await closed)[0]).toBe(1012)
+    const ws2 = await open(wsUrl)
+    expect(JSON.parse(await nextMessage(ws2)).type).toBe('turbopack-connected')
+  })
+
   it('close() terminates every browser socket', async () => {
     const { wsUrl, sockets } = await start()
     const ws = await open(wsUrl)

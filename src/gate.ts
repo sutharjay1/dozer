@@ -301,6 +301,9 @@ export class Gate {
         await Promise.resolve().then(() => this.deps.stopChild(handle))
       } catch (err) {
         this.stopping = null
+        this.sleeping = null
+        // still awake: tabs held during the attempt must reconnect to the server that survived
+        this.emit()
         throw err
       } finally {
         this.sleeping = null

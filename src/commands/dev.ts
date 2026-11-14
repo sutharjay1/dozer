@@ -87,11 +87,10 @@ async function startDev(argv: string[], env: NodeJS.ProcessEnv, appDir: string, 
     startChild: (signal) => launcher.startChild(signal),
     stopChild: (child) => launcher.stopChild(child),
     onChange: (snap, reason) => {
-      if (snap.state !== last) {
-        last = snap.state
-        if (snap.state === 'awake') sockets!.onWake(snap.hiddenPort!)
-        else if (snap.state === 'asleep') sockets!.onSleep()
-      }
+      // every awake change (a wake, or a stop that failed) hands held tabs to the running server
+      if (snap.state === 'awake') sockets!.onWake(snap.hiddenPort!)
+      else if (snap.state === 'asleep' && last !== 'asleep') sockets!.onSleep()
+      last = snap.state
       for (const l of listeners) l(snap, reason)
     },
     onActivity: (snap) => { for (const l of activity) l(snap) },
