@@ -1,0 +1,17 @@
+{
+  "name": "napdev-e2e-a",
+  "private": true,
+  "scripts": {
+    "dev": "napdev next dev -p 4310"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "typescript": "5.9.3"
+  }
+}

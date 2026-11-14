@@ -8,7 +8,9 @@ napdev keeps a Next.js dev server asleep until a page is requested. Design:
 
 - `pnpm install --frozen-lockfile`
 - `pnpm typecheck` · `pnpm test` · `pnpm build`
-- `pnpm test:e2e` (real Next.js apps, slow; after `pnpm build`)
+- `pnpm test:e2e`: acceptance on three real Next.js 16 apps. Local only, not in CI;
+  slow (about 4 min). It builds first, and on its first run installs Next 16 into a temp
+  dir outside the repo. Needs Chromium: `pnpm exec playwright install chromium`.
 
 All three of typecheck, test and build must pass before a commit lands on `main`.
 
