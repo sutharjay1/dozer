@@ -1,116 +1,13 @@
-// Runs the built CLI (dist/cli.js) and its real coordinator daemon; test/global-setup.ts builds first.
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+// Runs the built CLI and its real coordinator daemon (harness in test/helpers/coordinator.ts).
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs'
 import net from 'node:net'
-import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { askCoordinator, connectGate } from '../src/coordinator/client.js'
-import { PROTOCOL_VERSION, socketPath, type AppView } from '../src/coordinator/protocol.js'
+import { PROTOCOL_VERSION, socketPath } from '../src/coordinator/protocol.js'
 import { findHiddenPort } from '../src/port.js'
-
-const CLI = fileURLToPath(new URL('../dist/cli.js', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.url))
-
-// Unix socket paths are capped near 104 bytes, so the homes live under a short directory.
-const root = mkdtempSync(join(process.platform === 'win32' ? tmpdir() : '/tmp', 'napdev-co-'))
-const FAKE = join(root, `fake-next-${randomUUID()}.mjs`)
-symlinkSync(FIXTURE, FAKE)
-
-const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-function pgrep(pattern: string): number[] {
-  try {
-    return execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).map(Number)
-  } catch {
-    return []
-  }
-}
-
-function alive(pid: number): boolean {
-  try { process.kill(pid, 0); return true } catch { return false }
-}
-
-interface Cli { name: string; port: number; proc: ChildProcess; lines: string[]; exited: Promise<number | null> }
-
-let home: string
-let clis: Cli[] = []
-const daemons = new Set<number>()
-
-// The daemon logs `start pid=<n>` when it binds; every pid seen is checked at the end.
-function daemonPids(): number[] {
-  let log = ''
-  try { log = readFileSync(join(home, 'coordinator.log'), 'utf8') } catch { return [] }
-  const pids = [...log.matchAll(/ start pid=(\d+)/g)].map((m) => Number(m[1]))
-  for (const p of pids) daemons.add(p)
-  return pids
-}
-
-async function startCli(name: string, env: Record<string, string> = {}): Promise<Cli> {
-  const app = join(root, `${basename(home)}-${name}`)
-  mkdirSync(app, { recursive: true })
-  writeFileSync(join(app, 'package.json'), JSON.stringify({ name }))
-  const port = await findHiddenPort()
-  const proc = spawn(process.execPath, [CLI, 'next', 'dev', '-p', String(port)], {
-    cwd: app,
-    env: { ...process.env, NAPDEV_NEXT_BIN: FAKE, NAPDEV_HOME: home, NAPDEV_MAX_AWAKE: '1', NAPDEV_GRACE: '1s', ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  const cli: Cli = { name, port, proc, lines: [], exited: new Promise((r) => proc.once('exit', (c) => r(c))) }
-  for (const s of [proc.stdout!, proc.stderr!]) s.setEncoding('utf8').on('data', (d: string) => cli.lines.push(...d.split('\n')))
-  clis.push(cli)
-  await vi.waitFor(() => expect(cli.lines.some((l) => l.startsWith('napdev listening'))).toBe(true), { timeout: 10_000 })
-  return cli
-}
-
-const get = (cli: Cli, path = '/') => fetch(`http://localhost:${cli.port}${path}`).then(async (r) => ({ status: r.status, body: await r.text() }))
-
-async function list(): Promise<AppView[]> {
-  const reply = await askCoordinator({ t: 'list' }, home)
-  if (reply?.t !== 'apps') throw new Error(`no app list: ${JSON.stringify(reply)}`)
-  return reply.apps
-}
-
-const states = (apps: AppView[]) =>
-  Object.fromEntries(apps.map((a) => [basename(a.cwd).split('-').pop(), a.state]).sort())
-
-async function registered(n: number): Promise<AppView[]> {
-  let apps: AppView[] = []
-  await vi.waitFor(async () => { apps = await list(); expect(apps).toHaveLength(n) }, { timeout: 8_000, interval: 100 })
-  return apps
-}
-
-async function stopClis(): Promise<void> {
-  for (const cli of clis.splice(0)) {
-    if (cli.proc.exitCode === null && cli.proc.signalCode === null) {
-      cli.proc.kill('SIGTERM')
-      const t = setTimeout(() => cli.proc.kill('SIGKILL'), 8_000)
-      expect(await cli.exited).toBe(0)
-      clearTimeout(t)
-    }
-  }
-}
-
-beforeEach(() => {
-  home = mkdtempSync(join(root, 'h'))
-})
-
-afterEach(async () => {
-  await stopClis()
-  daemonPids()
-  for (const pid of daemons) { try { process.kill(pid, 'SIGTERM') } catch { /* gone */ } }
-  for (let i = 0; i < 30 && (pgrep(FAKE).length || [...daemons].some(alive)); i++) await sleepMs(100)
-  expect(pgrep(FAKE)).toEqual([])
-  expect([...daemons].filter(alive)).toEqual([])
-})
-
-afterAll(() => {
-  expect(pgrep(FAKE)).toEqual([])
-  expect([...daemons].filter(alive)).toEqual([])
-  rmSync(root, { recursive: true, force: true })
-})
+import { alive, CLI, get, home, list, pgrep, registered, sleepMs, startCli, states, daemonPids, FAKE, stopClis } from './helpers/coordinator.js'
 
 describe('coordinator', { timeout: 30_000 }, () => {
   it('registers every gate with its identity and an owner-only socket', async () => {

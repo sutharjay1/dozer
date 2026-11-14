@@ -212,7 +212,7 @@ describe('napdev next dev', { timeout: 20_000 }, () => {
   })
 
   it('unknown commands print usage and exit 1', async () => {
-    const cli = startCli(['status'])
+    const cli = startCli(['frobnicate'])
     expect(await exitCode(cli)).toBe(1)
     expect(cli.lines.join('\n')).toContain('napdev next dev [next dev options]')
   })
