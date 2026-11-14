@@ -69,12 +69,20 @@ Machine-wide settings, in `~/.napdev/config.json`:
 { "maxAwake": 2, "memoryBudget": 12 }
 ```
 
+Put machine-wide limits in that file. `NAPDEV_MAX_AWAKE` and `NAPDEV_MEMORY_BUDGET` in the
+environment apply only through the gate that starts the coordinator (the first one to run);
+gates started later cannot change them.
+
 ## How it works
 
 - **Gate.** `napdev next dev` listens on the public port and starts asleep. A request that
   is not a websocket upgrade wakes the app: napdev starts `next dev` on a hidden loopback
-  port, holds the request until Next answers, then proxies it. `Host` is forwarded
-  unchanged, and child log output has the hidden port rewritten to the public one.
+  port, waits until that port accepts connections, then proxies the request, so Next
+  compiles only the route asked for. `Host` is forwarded unchanged, and child log output
+  has the hidden port rewritten to the public one.
+- **Guard.** While an app is awake, one small napdev process leads Next's process group.
+  If the gate dies in any way, even `kill -9`, the guard kills the whole group, so no
+  Next.js process outlives napdev. It exists only while the app is awake.
 - **Sleep.** After the idle time with no HTTP request (dev-websocket frames from Next to a
   browser also count, up to 60 min after the last request), napdev stops the whole process
   tree and checks that nothing survived.
@@ -88,7 +96,8 @@ Machine-wide settings, in `~/.napdev/config.json`:
   evicted while it has a request in flight, within its grace after a request or a wake, or
   when pinned; then the new app wakes anyway and the oldest sleeps as soon as it may.
 - **Exit.** Ctrl+C, SIGTERM or a vanished parent stops the tree and frees the port. If
-  napdev cannot set itself up at start-up, it runs plain `next dev` instead.
+  Next.js crashes, napdev stops what is left of its tree, and the next request starts a
+  fresh one. If napdev cannot set itself up at start-up, it runs plain `next dev` instead.
 
 ## Limits
 
@@ -102,13 +111,17 @@ Machine-wide settings, in `~/.napdev/config.json`:
   refresh it.
 - If the coordinator crashes, running apps fall back to their idle rule until a new app
   starts it again.
+- `--experimental-https` is not supported yet: with it, napdev runs plain `next dev`, and
+  `napdev init` leaves such scripts alone.
 - macOS and Linux only. Node 20 or newer; Next.js 15 and 16.
 
 ## Benefit, measured
 
-- A sleeping app costs one gate process: about 47 MB RSS each, measured on three real
-  Next.js 16 apps (`pnpm test:e2e`, macOS, Node 22) with no app visited. The one shared
-  coordinator is about 45 MB more. No Next.js process exists while an app sleeps.
+- A sleeping app costs one gate process: about 47 MiB RSS each, measured on three real
+  Next.js 16 apps (`pnpm test:e2e`, macOS, Node 22) with no tab open; about 57-60 MiB once
+  a tab's dev websocket has connected (the websocket code then stays loaded). The one
+  shared coordinator is about 45 MiB more. No Next.js process and no guard exist while an
+  app sleeps; an awake app adds its guard (about 43 MiB) to the Next.js tree.
 - Waking costs the time `next dev` takes to answer its first request. Measured in
   `spikes/RESULTS.md` (warm `.next` cache): about 1 s for a small Next 16 app on Turbopack,
   5.8 s for a large Next 15 app (47 pages) on Turbopack, 14.8 s for the same app on
@@ -116,9 +129,9 @@ Machine-wide settings, in `~/.napdev/config.json`:
   request after sleep in 0.9-1.4 s (2.0 s on the very first run, with no `.next` cache).
 - For scale: Kortix measured 5.1-7.8 GB RSS for one `next dev` of its own app (their
   measurement, not ours). Three such worktrees cost 15-24 GB with plain `next dev`; with
-  `maxAwake=2` the ceiling is two of them, and only the gates (about 47 MB each) while no
-  page is being viewed. The
-  one-page Next 16 app in the acceptance suite used about 560 MB awake.
+  `maxAwake=2` the ceiling is two of them, and only the gates (about 47 MiB each) while no
+  page is being viewed. The one-page Next 16 app in the acceptance suite used about
+  560 MiB awake.
 
 ## Stack
 
