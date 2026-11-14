@@ -121,7 +121,7 @@ describe('coordinator', { timeout: 30_000 }, () => {
       expect(y.evictions()).toBe(0)
       x.report({ refused: true })
       await vi.waitFor(() => expect(y.evictions()).toBe(1))
-      // y obeys (it goes to sleep); x is still over the limit only if y stays up, so keep y awake
+      // y refuses too and stays awake, so the limit is still exceeded and x is asked again once its grace passes
       y.report({ refused: true })
       await vi.waitFor(() => expect(x.evictions()).toBe(2), { timeout: 8_000, interval: 100 })
     } finally {
