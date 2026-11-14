@@ -48,7 +48,7 @@ shows up on its own line.
 |---|---|---|---|
 | Idle time before sleep | `10m` | `NAPDEV_IDLE` | app `package.json` `napdev.idle` |
 | Wake timeout (then 504) | `120s` | `NAPDEV_WAKE_TIMEOUT` | app `package.json` `napdev.wakeTimeout` |
-| Pin (never evicted) | off | `NAPDEV_PIN=1` | app `package.json` `napdev.pin` |
+| Pin (never evicted) | off | `NAPDEV_PIN=1` (`0` forces it off) | app `package.json` `napdev.pin` |
 | Most apps awake at once | `2` | `NAPDEV_MAX_AWAKE` | `~/.napdev/config.json` `maxAwake` |
 | Memory budget for awake apps, GB | none | `NAPDEV_MEMORY_BUDGET` | `~/.napdev/config.json` `memoryBudget` |
 | Grace before an app may be evicted | `60s` | `NAPDEV_GRACE` | |

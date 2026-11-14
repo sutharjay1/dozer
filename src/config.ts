@@ -71,7 +71,7 @@ export function loadAppConfig(appDir: string, env: NodeJS.ProcessEnv): AppConfig
   return {
     idleMs: duration(src, 'idle', idle, DEFAULTS.idleMs),
     wakeTimeoutMs: duration(wsrc, 'wakeTimeout', wake, DEFAULTS.wakeTimeoutMs),
-    pin: env.NAPDEV_PIN === '1' ? true : cfg.pin === true,
+    pin: env.NAPDEV_PIN === '1' ? true : env.NAPDEV_PIN === '0' ? false : cfg.pin === true,
   }
 }
 

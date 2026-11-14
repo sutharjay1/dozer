@@ -50,6 +50,9 @@ describe('loadAppConfig', () => {
     expect(loadAppConfig(appWith({ idle: '2m' }), { NAPDEV_IDLE: '30s' }).idleMs).toBe(30_000)
     expect(loadAppConfig(tmp(), { NAPDEV_WAKE_TIMEOUT: '5s' }).wakeTimeoutMs).toBe(5_000)
     expect(loadAppConfig(tmp(), { NAPDEV_PIN: '1' }).pin).toBe(true)
+    expect(loadAppConfig(appWith({ pin: true }), { NAPDEV_PIN: '0' }).pin).toBe(false)
+    expect(loadAppConfig(appWith({ pin: false }), { NAPDEV_PIN: '1' }).pin).toBe(true)
+    expect(loadAppConfig(appWith({ pin: true }), {}).pin).toBe(true)
   })
   it('invalid duration names the key', () => {
     expect(() => loadAppConfig(appWith({ idle: 'soon' }), {})).toThrow(/idle/)
