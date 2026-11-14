@@ -63,15 +63,19 @@ describe('loadAppConfig', () => {
 
 describe('loadMachineConfig', () => {
   it('defaults when file missing', () => {
-    expect(loadMachineConfig(tmp(), {})).toEqual({ maxAwake: 2, memoryBudgetBytes: null })
+    expect(loadMachineConfig(tmp(), {})).toEqual({ maxAwake: 2, memoryBudgetBytes: null, graceMs: 60_000 })
   })
   it('reads config.json', () => {
-    expect(loadMachineConfig(homeWith({ memoryBudget: 8 }), {})).toEqual({ maxAwake: 2, memoryBudgetBytes: 8 * 1024 ** 3 })
+    expect(loadMachineConfig(homeWith({ memoryBudget: 8 }), {})).toEqual({ maxAwake: 2, memoryBudgetBytes: 8 * 1024 ** 3, graceMs: 60_000 })
     expect(loadMachineConfig(homeWith({ maxAwake: 4 }), {}).maxAwake).toBe(4)
   })
   it('env wins', () => {
     expect(loadMachineConfig(homeWith({ maxAwake: 4, memoryBudget: 8 }), { NAPDEV_MAX_AWAKE: '1', NAPDEV_MEMORY_BUDGET: '2' }))
-      .toEqual({ maxAwake: 1, memoryBudgetBytes: 2 * 1024 ** 3 })
+      .toEqual({ maxAwake: 1, memoryBudgetBytes: 2 * 1024 ** 3, graceMs: 60_000 })
+  })
+  it('NAPDEV_GRACE overrides the grace period', () => {
+    expect(loadMachineConfig(tmp(), { NAPDEV_GRACE: '1s' }).graceMs).toBe(1_000)
+    expect(() => loadMachineConfig(tmp(), { NAPDEV_GRACE: 'soon' })).toThrow(/NAPDEV_GRACE/)
   })
   it('invalid JSON names the file', () => {
     const d = tmp()

@@ -13,7 +13,7 @@ export const DEFAULTS = {
 } as const
 
 export interface AppConfig { idleMs: number; wakeTimeoutMs: number; pin: boolean }
-export interface MachineConfig { maxAwake: number; memoryBudgetBytes: number | null }
+export interface MachineConfig { maxAwake: number; memoryBudgetBytes: number | null; graceMs: number }
 
 const UNITS: Record<string, number> = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }
 
@@ -82,5 +82,6 @@ export function loadMachineConfig(home: string, env: NodeJS.ProcessEnv): Machine
     env.NAPDEV_MAX_AWAKE ?? cfg.maxAwake, DEFAULTS.maxAwake)
   const budget = env.NAPDEV_MEMORY_BUDGET ?? cfg.memoryBudget
   const gb = positiveNumber(env.NAPDEV_MEMORY_BUDGET !== undefined ? 'NAPDEV_MEMORY_BUDGET' : file, 'memoryBudget', budget, 0)
-  return { maxAwake, memoryBudgetBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : null }
+  const graceMs = duration('NAPDEV_GRACE', 'grace', env.NAPDEV_GRACE, DEFAULTS.graceMs)
+  return { maxAwake, memoryBudgetBytes: gb > 0 ? Math.round(gb * 1024 ** 3) : null, graceMs }
 }
