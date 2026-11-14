@@ -92,7 +92,7 @@ process.on('SIGUSR2', async () => {
   log('SIGUSR2: waking upstream')
   await startUpstream()
   log('closing', held.size, 'held sockets with 1012')
-  const mode = process.env.WAKE_MODE || 'close' // close | reload | both
+  const mode = process.env.WAKE_MODE || 'both' // close | reload | both
   if (mode !== 'close') for (const e of [...held]) { try { e.browser.send(JSON.stringify({ action: 'reloadPage', type: 'reloadPage' })) } catch {} }
   if (mode !== 'reload') for (const e of [...held]) e.browser.close(1012, 'upstream restarted')
   log('WOKE')

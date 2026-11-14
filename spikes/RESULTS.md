@@ -38,3 +38,24 @@ The hold half passes in all 8 rows: 0 HTTP requests, 0 navigations, 0 new upgrad
 ## Gate
 
 Literal brief behavior: 6/8 PASS, Next 15 app-router rows FAIL, so by the brief's gate this is a stop-and-report. With the reloadPage addition on wake, all tested failing rows pass (8/8 effective), but that is a technique change the designer must accept. Other rows were not re-run with the variant.
+
+## Variant: reload message on wake
+
+Proxy wake (now the default, `WAKE_MODE=both`): send one text frame `{"action":"reloadPage","type":"reloadPage"}` to every held browser socket, then close it with 1012. Same assertions as above, plus: each row must show exactly 2 full page loads in total (initial + one reload), so a reload-message plus session-id reload cannot double up.
+
+Which shape each client handles (the other key is ignored, so one frame carrying both works):
+- Next 15.5.29 keys on `action`: `HMR_ACTIONS_SENT_TO_BROWSER.RELOAD_PAGE = "reloadPage"`, handled in `next/dist/client/dev/hot-reloader/app/hot-reloader-app.js` (case at line ~337, `if (!('action' in obj)) return` at ~160) and `.../pages/hot-reloader-pages.js` (~319). Client answers `client-reload-page` and calls `location.reload()`.
+- Next 16.4.6 keys on `type`: `HMR_MESSAGE_SENT_TO_BROWSER.RELOAD_PAGE = "reloadPage"` (`next/dist/server/dev/hot-reloader-types.js` line 27), handled in `.../hot-reloader/app/hot-reloader-app.js` (`switch(message.type)` at ~217, case ~379) and `.../pages/hot-reloader-pages.js` (~324).
+
+| Next | bundler | router | result |
+|---|---|---|---|
+| 15.5.29 | webpack | app | PASS |
+| 15.5.29 | webpack | pages | PASS |
+| 15.5.29 | turbopack (`--turbopack`) | app | PASS |
+| 15.5.29 | turbopack (`--turbopack`) | pages | PASS |
+| 16.4.6 | turbopack (default) | app | PASS |
+| 16.4.6 | turbopack (default) | pages | PASS |
+| 16.4.6 | webpack (`--webpack`) | app | PASS |
+| 16.4.6 | webpack (`--webpack`) | pages | PASS |
+
+8/8 PASS: hold half unchanged (0 HTTP, 0 navigations over 180 s), exactly one reload after wake in every row, no double reload, HMR edit visible in every row without a manual reload.
