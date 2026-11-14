@@ -28,6 +28,14 @@ function pgrep(pattern: string): number[] {
   }
 }
 
+/** Live (non-zombie) processes in process group `pgid`. */
+function groupMembers(pgid: number): number[] {
+  return execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8' }).split('\n')
+    .map((l) => l.trim().split(/\s+/))
+    .filter(([p, g, st]) => p && Number(g) === pgid && !(st ?? '').startsWith('Z'))
+    .map(([p]) => Number(p))
+}
+
 interface Cli {
   proc: ChildProcess
   lines: string[]
@@ -169,6 +177,25 @@ describe('dozer next dev', { timeout: 20_000 }, () => {
     while (pgrep(FAKE).length && Date.now() - t0 < 3_000) await new Promise((r) => setTimeout(r, 50))
     expect(pgrep(FAKE)).toEqual([])
     expect(cli.grandchildren.filter(alive)).toEqual([])
+  })
+
+  it('SIGKILL of the gate mid-stop leaves no process of the group, even one that ignores SIGTERM', async () => {
+    const cli = startCli(['next', 'dev', '-p', String(port)], { FAKE_NEXT_STUBBORN_CHILD: '1' })
+    await waitForLine(cli, /dozer listening/)
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200)
+    await waitForLine(cli, /grandchild=/)
+    const [grandchild] = cli.grandchildren
+    const group = Number(execFileSync('ps', ['-o', 'pgid=', '-p', String(grandchild)], { encoding: 'utf8' }).trim())
+    expect(groupMembers(group).length).toBeGreaterThan(1)
+    // the gate's stop sends SIGTERM to the group: next exits, the grandchild stays
+    cli.proc.kill('SIGTERM')
+    while (pgrep(FAKE).length) await new Promise((r) => setTimeout(r, 20))
+    cli.proc.kill('SIGKILL') // still inside the gate's SIGTERM grace
+    await exitCode(cli)
+    const t0 = Date.now()
+    while (groupMembers(group).length && Date.now() - t0 < 3_000) await new Promise((r) => setTimeout(r, 50))
+    expect(groupMembers(group)).toEqual([])
+    expect(alive(grandchild!)).toBe(false)
   })
 
   // the spec's goal 1: an ESM bundle and an eager `ws` load put it at ~72 MB on macOS

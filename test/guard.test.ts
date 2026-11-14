@@ -57,6 +57,15 @@ describe('guard', () => {
     expect(await exited).toBe(0) // fake-next exits 0 on SIGTERM
   })
 
+  it('kills the rest of its group when next exits, even a worker that ignores SIGTERM', async () => {
+    const { g, exited, line } = await guard({ FAKE_NEXT_STUBBORN_CHILD: '1' })
+    const grandchild = Number((await line(/grandchild=(\d+)/))[1])
+    g.kill('SIGTERM')
+    expect(await exited).toBe(0) // still next's exit code
+    for (let i = 0; i < 40 && alive(grandchild); i++) await sleepMs(50)
+    expect(alive(grandchild)).toBe(false)
+  })
+
   it('kills its whole group when its stdin ends (the gate died)', async () => {
     const { g, exited, line } = await guard()
     const grandchild = Number((await line(/grandchild=(\d+)/))[1])

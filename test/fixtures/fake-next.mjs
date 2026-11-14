@@ -22,7 +22,11 @@ if (process.env.FAKE_NEXT_CRASH === '1') {
 }
 
 // One idle grandchild in the same process group, like Next's workers.
-const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+// FAKE_NEXT_STUBBORN_CHILD=1 makes it ignore SIGTERM, so only SIGKILL stops it.
+const idle = process.env.FAKE_NEXT_STUBBORN_CHILD === '1'
+  ? "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"
+  : 'setInterval(() => {}, 1000)'
+const grandchild = spawn(process.execPath, ['-e', idle], { stdio: 'ignore' })
 
 const server = http.createServer((req, res) => {
   if (req.url === '/stream') {

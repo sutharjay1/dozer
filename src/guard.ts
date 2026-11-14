@@ -2,7 +2,7 @@
 // The gate spawns it in a new session and holds its stdin open without writing. If the gate dies
 // in any way (SIGKILL included), stdin ends and the guard SIGKILLs its whole group, Next with it.
 // Keep the imports minimal: one guard runs per awake app.
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { constants } from 'node:os'
 
 const FORWARDED = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
@@ -11,6 +11,31 @@ const CLOSE_WAIT_MS = 200
 
 function killGroup(): void {
   try { process.kill(-process.pid, 'SIGKILL') } catch { /* nothing left */ }
+}
+
+/** Live members of this guard's group other than itself (the guard leads it: pgid is its pid). */
+function others(): number[] {
+  let out = ''
+  try { out = execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8' }) } catch { return [] }
+  const pids: number[] = []
+  for (const line of out.split('\n')) {
+    const [p, g, st] = line.trim().split(/\s+/)
+    if (!p || Number(g) !== process.pid || Number(p) === process.pid || (st ?? '').startsWith('Z')) continue
+    pids.push(Number(p))
+  }
+  return pids
+}
+
+/**
+ * Next has exited: SIGKILL its leftover workers now instead of leaving them to the gate's stop,
+ * which can die during its SIGTERM grace. The guard itself survives to report Next's exit code.
+ */
+function killOthers(): void {
+  for (let i = 0; i < 5; i++) {
+    const left = others()
+    if (left.length === 0) return
+    for (const pid of left) { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
+  }
 }
 
 export function runGuard(argv: string[]): Promise<number> {
@@ -45,6 +70,7 @@ export function runGuard(argv: string[]): Promise<number> {
       process.stdin.destroy()
       child.stdout.destroy()
       child.stderr.destroy()
+      killOthers()
       // resolve once what Next printed has been flushed to the gate
       process.stdout.write('', () => process.stderr.write('', () => resolve(code)))
     }
