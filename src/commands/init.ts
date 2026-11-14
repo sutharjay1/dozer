@@ -9,6 +9,8 @@ export interface InitChange { file: string; before: string; after: string }
 /** A script left as it is because dozer cannot gate it yet. */
 export interface InitSkip { file: string; script: string; reason: string }
 
+/** The npm package name; the command it installs is `dozer`. */
+const PKG_NAME = 'next-dozer'
 const SKIP = new Set(['node_modules', '.git', '.next', 'dist'])
 
 /** Replace each bare `next dev` not already preceded by `dozer ` with `dozer next dev`. */
@@ -153,16 +155,16 @@ function editPackage(text: string, version: string): Edit {
   }
   if (!changed) return { after: null, skipped }
 
-  const hasDozer = (pkg.dependencies && 'dozer' in pkg.dependencies) || (pkg.devDependencies && 'dozer' in pkg.devDependencies)
+  const hasDozer = (pkg.dependencies && PKG_NAME in pkg.dependencies) || (pkg.devDependencies && PKG_NAME in pkg.devDependencies)
   if (hasDozer) return { after: out, skipped }
   const lay = layoutOf(text)
   const value = JSON.stringify(`^${version}`)
   const rootStartOut = skipWs(out, 0)
   const dev = scanObject(out, rootStartOut).find((e) => e.key === 'devDependencies')
-  if (dev && out[dev.valStart] === '{') return { after: insertEntry(out, dev.valStart, 'dozer', value, 1, lay), skipped }
+  if (dev && out[dev.valStart] === '{') return { after: insertEntry(out, dev.valStart, PKG_NAME, value, 1, lay), skipped }
   const last = top[top.length - 1]!
   const ws = leadingWs(text, last.keyStart)
-  const block = `${JSON.stringify('devDependencies')}: {${lay.nl}${ws}${lay.unit}${JSON.stringify('dozer')}: ${value}${lay.nl}${ws}}`
+  const block = `${JSON.stringify('devDependencies')}: {${lay.nl}${ws}${lay.unit}${JSON.stringify(PKG_NAME)}: ${value}${lay.nl}${ws}}`
   const lastOut = scanObject(out, rootStartOut).at(-1)!
   const wsOut = text.slice(skipBack(text, last.keyStart), last.keyStart)
   return { after: out.slice(0, lastOut.valEnd) + `,${wsOut}${block}` + out.slice(lastOut.valEnd), skipped }
@@ -325,10 +327,10 @@ function ownVersion(): string {
     const p = join(dir, 'package.json')
     if (existsSync(p)) {
       const pkg = JSON.parse(readFileSync(p, 'utf8')) as { name?: string; version?: string }
-      if (pkg.name === 'dozer' && pkg.version) return pkg.version
+      if (pkg.name === PKG_NAME && pkg.version) return pkg.version
     }
     const up = dirname(dir)
-    if (up === dir) throw new Error('could not find dozer package.json')
+    if (up === dir) throw new Error('could not find next-dozer package.json')
     dir = up
   }
 }

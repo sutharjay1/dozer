@@ -64,7 +64,7 @@ describe('planInit', () => {
       "node a.mjs && NODE_OPTIONS='--max-old-space-size=4096' dotenvx run -- dozer next dev --port ${WEB_PORT:-3000}",
     )
     expect(after.scripts.build).toBe('next build')
-    expect(after.devDependencies.dozer).toBe('^0.1.0')
+    expect(after.devDependencies['next-dozer']).toBe('^0.1.0')
   })
 
   it('finds apps through pnpm-workspace.yaml, with comments, quotes and negation', async () => {
@@ -127,7 +127,7 @@ describe('planInit', () => {
     const root = make({ 'package.json': original })
     const [c] = await planInit(root, '0.1.0')
     expect(c!.after).toBe(
-      '{\n\t"name": "web",\n\t"scripts": {\n\t\t"dev": "dozer next dev"\n\t},\n\t"dependencies": {\n\t\t"next": "15"\n\t},\n\t"devDependencies": {\n\t\t"dozer": "^0.1.0"\n\t}\n}\n',
+      '{\n\t"name": "web",\n\t"scripts": {\n\t\t"dev": "dozer next dev"\n\t},\n\t"dependencies": {\n\t\t"next": "15"\n\t},\n\t"devDependencies": {\n\t\t"next-dozer": "^0.1.0"\n\t}\n}\n',
     )
   })
 
@@ -136,21 +136,21 @@ describe('planInit', () => {
     const root = make({ 'package.json': original })
     const [c] = await planInit(root, '0.1.0')
     expect(c!.after).toBe(
-      '{\n    "scripts": { "dev": "dozer next dev" },\n    "devDependencies": {\n        "dozer": "^0.1.0",\n        "next": "15",\n        "zod": "3"\n    }\n}',
+      '{\n    "scripts": { "dev": "dozer next dev" },\n    "devDependencies": {\n        "next": "15",\n        "next-dozer": "^0.1.0",\n        "zod": "3"\n    }\n}',
     )
   })
 
-  it('leaves an existing dozer dependency but still rewrites scripts', async () => {
-    const root = make({ 'package.json': { ...next('w'), devDependencies: { dozer: '^0.0.9' } } })
+  it('leaves an existing next-dozer dependency but still rewrites scripts', async () => {
+    const root = make({ 'package.json': { ...next('w'), devDependencies: { 'next-dozer': '^0.0.9' } } })
     const [c] = await planInit(root, '0.1.0')
-    expect(JSON.parse(c!.after).devDependencies.dozer).toBe('^0.0.9')
+    expect(JSON.parse(c!.after).devDependencies['next-dozer']).toBe('^0.0.9')
     expect(JSON.parse(c!.after).scripts.dev).toBe('dozer next dev')
   })
 
   it('does nothing for an already-initialized app and skips packages without next', async () => {
     const root = make({
       'package.json': { name: 'r', workspaces: ['apps/*'] },
-      'apps/a/package.json': { ...next('a', 'dozer next dev'), devDependencies: { dozer: '^0.1.0' } },
+      'apps/a/package.json': { ...next('a', 'dozer next dev'), devDependencies: { 'next-dozer': '^0.1.0' } },
       'apps/b/package.json': { name: 'b', scripts: { dev: 'next dev' } },
     })
     expect(await planInit(root, '0.1.0')).toEqual([])
@@ -186,7 +186,7 @@ describe('runInit', () => {
     const io = silence()
     expect(await runInit(['--yes'], {}, root)).toBe(0)
     expect(io.out()).toContain("Run your package manager's install to finish.")
-    expect(JSON.parse(read(root, 'apps/web/package.json')).devDependencies.dozer).toMatch(/^\^\d/)
+    expect(JSON.parse(read(root, 'apps/web/package.json')).devDependencies['next-dozer']).toMatch(/^\^\d/)
     expect(await planInit(root, '0.1.0')).toEqual([])
     const io2 = silence()
     expect(await runInit(['--yes'], {}, root)).toBe(0)
