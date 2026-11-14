@@ -1,6 +1,6 @@
 import { spawn, execFile } from 'node:child_process'
 import { createRequire } from 'node:module'
-import http from 'node:http'
+import net from 'node:net'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -51,11 +51,15 @@ export function spawnChild(o: {
   return { pid: child.pid ?? -1, hiddenPort: o.hiddenPort, exited }
 }
 
+/**
+ * Resolves once something accepts a TCP connection on the hidden port, polling every 100 ms.
+ * Nothing is requested: the proxied request is the first one Next sees, so it compiles only its own route.
+ */
 export function waitReady(hiddenPort: number, timeoutMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     let done = false
     let poll: NodeJS.Timeout | undefined
-    let inflight: http.ClientRequest | undefined
+    let inflight: net.Socket | undefined
     const finish = (err?: unknown) => {
       if (done) return
       done = true
@@ -73,15 +77,10 @@ export function waitReady(hiddenPort: number, timeoutMs: number, signal: AbortSi
     )
     const attempt = () => {
       if (done) return
-      // A connect that is accepted may take seconds to answer while Next compiles; wait it out.
-      const req = http.get(
-        { host: '127.0.0.1', port: hiddenPort, path: '/', agent: false, timeout: 5_000 },
-        (res) => { res.resume(); finish() },
-      )
-      inflight = req
-      const retry = () => { req.destroy(); if (!done) poll = setTimeout(attempt, 100) }
-      req.once('timeout', retry)
-      req.once('error', retry)
+      const sock = net.connect({ host: '127.0.0.1', port: hiddenPort })
+      inflight = sock
+      sock.once('connect', () => finish())
+      sock.once('error', () => { sock.destroy(); if (!done) poll = setTimeout(attempt, 100) })
     }
     if (signal.aborted) return onAbort()
     signal.addEventListener('abort', onAbort)

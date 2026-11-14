@@ -1,3 +1,4 @@
+import net from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { findHiddenPort } from '../src/port.js'
@@ -64,6 +65,26 @@ describe('child', () => {
     expect(await treeRssBytes(h.pid)).toBeGreaterThan(10 * 1024 ** 2)
     await stopTree(h.pid)
     expect(await treeRssBytes(h.pid)).toBe(0)
+  })
+
+  it('waitReady resolves only once next listens', async () => {
+    const h = await start({ FAKE_NEXT_START_DELAY_MS: '800' })
+    const t0 = Date.now()
+    await waitReady(h.hiddenPort, 5_000, new AbortController().signal)
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(700)
+  })
+
+  it('waitReady connects but sends no request', async () => {
+    const got: Buffer[] = []
+    const server = net.createServer((s) => s.on('data', (d: Buffer) => got.push(d)))
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+    try {
+      await waitReady((server.address() as net.AddressInfo).port, 5_000, new AbortController().signal)
+      await new Promise((r) => setTimeout(r, 200))
+      expect(Buffer.concat(got).length).toBe(0)
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()))
+    }
   })
 
   it('waitReady rejects when aborted', async () => {
