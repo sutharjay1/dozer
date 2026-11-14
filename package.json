@@ -1,21 +1,48 @@
 {
-  "name": "dozer",
+  "name": "next-dozer",
   "version": "0.1.0",
-  "private": true,
-  "description": "Holds a Next.js app's dev port and runs the real next dev only while pages are requested.",
+  "description": "Keeps Next.js dev servers asleep until a page is requested, across every repo and worktree.",
+  "keywords": [
+    "nextjs",
+    "next",
+    "dev-server",
+    "memory",
+    "worktree",
+    "turborepo",
+    "monorepo",
+    "cli"
+  ],
+  "homepage": "https://dozer-docs.sutharjay3635.workers.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sutharjay1/dozer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sutharjay1/dozer/issues"
+  },
+  "license": "MIT",
+  "author": "Jay Suthar",
   "type": "module",
   "bin": {
     "dozer": "dist/cli.cjs"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20"
   },
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "packageManager": "pnpm@10.10.0",
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:e2e": "pnpm build && vitest run -c vitest.e2e.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "ws": "^8.23.0"
