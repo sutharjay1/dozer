@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { findHiddenPort } from '../src/port.js'
 import {
-  psRunner, resolveNextBin, spawnChild, stopTree, treeRssBytes, waitReady, type ChildHandle,
+  childEnv, psRunner, resolveNextBin, spawnChild, stopTree, treeRssBytes, waitReady, type ChildHandle,
 } from '../src/child.js'
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-next.mjs', import.meta.url))
@@ -116,6 +116,15 @@ describe('ps failure', () => {
   it('treeRssBytes rejects when ps prints nothing', async () => {
     vi.spyOn(psRunner, 'run').mockRejectedValue(new Error('ps printed nothing'))
     await expect(treeRssBytes(1234)).rejects.toThrow('ps printed nothing')
+  })
+})
+
+describe('childEnv', () => {
+  it('sets the ports, and FORCE_COLOR only on a terminal the user has not configured', () => {
+    expect(childEnv({ A: '1' }, 3000, 51000, false)).toEqual({ A: '1', NAPDEV_PUBLIC_PORT: '3000', PORT: '51000' })
+    expect(childEnv({}, 3000, 51000, true).FORCE_COLOR).toBe('1')
+    expect(childEnv({ FORCE_COLOR: '0' }, 3000, 51000, true).FORCE_COLOR).toBe('0')
+    expect(childEnv({ NO_COLOR: '1' }, 3000, 51000, true).FORCE_COLOR).toBeUndefined()
   })
 })
 

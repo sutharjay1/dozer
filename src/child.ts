@@ -26,6 +26,13 @@ export function resolveNextBin(appDir: string, env: NodeJS.ProcessEnv): string {
 const SELF = fileURLToPath(import.meta.url)
 export const GUARD_CLI = SELF.endsWith('.cjs') ? SELF : join(dirname(SELF), '..', 'dist', 'cli.cjs')
 
+export function childEnv(env: NodeJS.ProcessEnv, publicPort: number, hiddenPort: number, tty: boolean): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env, NAPDEV_PUBLIC_PORT: String(publicPort), PORT: String(hiddenPort) }
+  // Next's output reaches the terminal through a pipe; keep its colours unless the user chose otherwise
+  if (tty && env.FORCE_COLOR === undefined && env.NO_COLOR === undefined) out.FORCE_COLOR = '1'
+  return out
+}
+
 /**
  * Starts Next under a guard process (see guard.ts) that leads a new process group; the handle's
  * pid is the guard's, which is also the group id. The guard kills the group if this process dies.
@@ -34,7 +41,7 @@ export function spawnChild(o: {
   nextBin: string; cwd: string; env: NodeJS.ProcessEnv; passthrough: string[]
   hiddenPort: number; publicPort: number; onOutput(text: string): void
 }): ChildHandle {
-  const env: NodeJS.ProcessEnv = { ...o.env, NAPDEV_PUBLIC_PORT: String(o.publicPort), PORT: String(o.hiddenPort) }
+  const env = childEnv(o.env, o.publicPort, o.hiddenPort, process.stdout.isTTY === true)
   const child = spawn(
     process.execPath,
     [GUARD_CLI, '__guard', o.nextBin, 'dev', ...o.passthrough, '--port', String(o.hiddenPort), '--hostname', '127.0.0.1'],
