@@ -1,8 +1,10 @@
 import { mkdirSync } from 'node:fs'
 import type http from 'node:http'
 import { parseDevArgs, type DevArgs } from '../args.js'
-import { resolveNextBin, type ChildHandle } from '../child.js'
+import { resolveNextBin, treeRssBytes, type ChildHandle } from '../child.js'
 import { loadAppConfig, napdevHome, type AppConfig } from '../config.js'
+import { connectGate, type CoordinatorClient } from '../coordinator/client.js'
+import { PROTOCOL_VERSION } from '../coordinator/protocol.js'
 import { Gate, type GateSnapshot, type GateState, type SleepReason } from '../gate.js'
 import { identify, type Identity } from '../identity.js'
 import { createChildLauncher } from '../launch.js'
@@ -14,6 +16,7 @@ import { SocketHub } from '../sockets.js'
 
 const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
 const PARENT_POLL_MS = 2_000
+const REPORT_EVERY_MS = 10_000
 
 export type GateListener = (snapshot: GateSnapshot, reason?: SleepReason) => void
 
@@ -144,6 +147,65 @@ async function fallback(err: unknown, argv: string[], env: NodeJS.ProcessEnv, ap
   return runNext(nextBin, args, appDir, env)
 }
 
+const message = (err: unknown) => (err as Error)?.message ?? String(err)
+
+/**
+ * Registers the session with the machine-wide coordinator and keeps it informed; obeys its
+ * sleep and wake commands. Without a coordinator the gate keeps its idle rule only.
+ * Returns a function that detaches (safe to call before the connection settles).
+ */
+function attachCoordinator(session: DevSession): () => void {
+  const { gate, identity, config, appDir, publicPort, home } = session
+  let client: CoordinatorClient | null = null
+  let detached = false
+  let rssBytes = 0
+
+  const report = () => {
+    const s = gate.snapshot()
+    client?.report({ t: 'report', state: s.state, inFlight: s.inFlight, lastHttpAt: s.lastHttpAt,
+      rssBytes: s.childPid === null ? 0 : rssBytes })
+  }
+  const sample = async () => {
+    const pid = gate.snapshot().childPid
+    if (pid === null) rssBytes = 0
+    else {
+      try { rssBytes = await treeRssBytes(pid) } catch { /* unknown: keep the last value */ }
+    }
+    report()
+  }
+
+  const stopListening = session.onGateChange((snap) => {
+    report()
+    if (snap.state === 'awake') void sample()
+  })
+  const timer = setInterval(() => void sample(), REPORT_EVERY_MS)
+  timer.unref()
+
+  void connectGate({
+    t: 'hello', v: PROTOCOL_VERSION,
+    app: { id: identity.id, name: identity.name, cwd: appDir, publicPort, pid: process.pid, pinned: config.pin },
+  }, home).then((c) => {
+    if (detached) return c.close()
+    client = c
+    c.onCommand((m) => {
+      if (m.t === 'sleep') {
+        gate.sleep(m.reason).catch((err: unknown) => process.stderr.write(`napdev: could not sleep Next.js (${message(err)})\n`))
+      } else if (m.t === 'wake') {
+        gate.resetFailures()
+        gate.ensureAwake().catch((err: unknown) => process.stderr.write(`napdev: could not wake Next.js (${message(err)})\n`))
+      }
+    })
+    void sample()
+  })
+
+  return () => {
+    detached = true
+    clearInterval(timer)
+    stopListening()
+    client?.close()
+  }
+}
+
 /**
  * Prints the ready line, waits for a signal or a parent change, then shuts the session down.
  * Resolves the exit code.
@@ -190,7 +252,11 @@ export async function runDev(argv: string[], env: NodeJS.ProcessEnv, cwd: string
     return fallback(err, argv, env, cwd, progress)
   }
   if (env.NAPDEV_DEBUG === '1') process.stderr.write(`napdev: identity ${JSON.stringify(session.identity)}\n`)
-  return serve(session, () => {
+  let detach = () => {}
+  const code = await serve(session, () => {
     process.stdout.write(`napdev listening on http://localhost:${session.publicPort} (Next.js asleep; starts on first request)\n`)
+    detach = attachCoordinator(session)
   })
+  detach()
+  return code
 }

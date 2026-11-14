@@ -1,10 +1,12 @@
 import { resolveNextBin } from './child.js'
 import { runDev } from './commands/dev.js'
+import { runCoordinator } from './coordinator/server.js'
 import { runNext } from './passthrough.js'
 
 const USAGE = 'usage: napdev next dev [next dev options]\n'
 
 async function main(argv: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
+  if (argv[0] === '__coordinator') return runCoordinator(env) // hidden: started by the first gate
   if (argv[0] !== 'next') {
     process.stderr.write(USAGE)
     return 1
