@@ -32,7 +32,8 @@ async function control(verb: 'sleep' | 'wake', argv: string[], env: NodeJS.Proce
   const home = napdevHome(env)
   if (all) {
     const reply = await askCoordinator({ t: 'sleep', target: '*' }, home)
-    if (reply?.t !== 'ok') return fail('No napdev apps are running.\n')
+    if (reply === null) return fail('No napdev apps are running.\n')
+    if (reply.t !== 'ok') return fail('napdev: could not sleep apps\n')
     process.stdout.write(`Asleep: ${reply.count} app(s)\n`)
     return 0
   }
@@ -41,9 +42,15 @@ async function control(verb: 'sleep' | 'wake', argv: string[], env: NodeJS.Proce
   const m = matchApps(listed.apps, query!)
   if (m.kind === 'none') return fail(`No napdev app matches "${query}". Running apps:\n${names(listed.apps)}`)
   if (m.kind === 'many') return fail(`"${query}" matches several apps:\n${names(m.apps)}`)
+  const done = `${verb === 'sleep' ? 'Asleep' : 'Awake'}: ${m.app.name}\n`
+  // already there: the coordinator would answer count 0, but the goal state holds
+  if (verb === 'sleep' ? m.app.state === 'asleep' : m.app.state !== 'asleep') {
+    process.stdout.write(done)
+    return 0
+  }
   const reply = await askCoordinator({ t: verb, target: m.app.id }, home)
   if (reply?.t !== 'ok' || reply.count < 1) return fail(`napdev: could not ${verb} ${m.app.name}\n`)
-  process.stdout.write(`${verb === 'sleep' ? 'Asleep' : 'Awake'}: ${m.app.name}\n`)
+  process.stdout.write(done)
   return 0
 }
 

@@ -2,14 +2,13 @@
 // Importing it registers per-test cleanup hooks; test/global-setup.ts builds first.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import net from 'node:net'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { askCoordinator, connectGate } from '../../src/coordinator/client.js'
-import { PROTOCOL_VERSION, socketPath, type AppView } from '../../src/coordinator/protocol.js'
+import { afterAll, afterEach, beforeEach, expect, vi } from 'vitest'
+import { askCoordinator } from '../../src/coordinator/client.js'
+import { type AppView } from '../../src/coordinator/protocol.js'
 import { findHiddenPort } from '../../src/port.js'
 
 export const CLI = fileURLToPath(new URL('../../dist/cli.js', import.meta.url))

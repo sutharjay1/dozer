@@ -136,6 +136,15 @@ describe('status, sleep and wake against a real daemon', { timeout: 40_000 }, ()
     await vi.waitFor(async () => expect(states(await list())).toEqual({ api: 'asleep', web: 'asleep' }), { timeout: 10_000, interval: 100 })
   })
 
+  it('sleep and wake succeed when the app is already there', async () => {
+    await startCli('web')
+    await vi.waitFor(async () => expect(await list()).toHaveLength(1))
+    expect(await run('sleep', 'web')).toMatchObject({ code: 0, out: expect.stringMatching(/^Asleep: .*\/web @ -\n$/) })
+    await run('wake', 'web')
+    await vi.waitFor(async () => expect(states(await list())).toEqual({ web: 'awake' }), { timeout: 10_000, interval: 100 })
+    expect(await run('wake', 'web')).toMatchObject({ code: 0, out: expect.stringMatching(/^Awake: .*\/web @ -\n$/) })
+  })
+
   it('sleep --all puts every app to sleep', async () => {
     await startCli('web')
     await vi.waitFor(async () => expect(await list()).toHaveLength(1))
