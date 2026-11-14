@@ -63,6 +63,7 @@ async function runRow(row) {
     ev('hold done: proxy HTTP reqs', httpDuring.length, 'navs', navs - navsBefore, 'browser reqs', reqs - reqsBefore, 'upgrades', upgradesDuring.length)
     const fails = []
     if (httpDuring.length) fails.push(`proxy saw ${httpDuring.length} HTTP request(s) during hold: ${httpDuring.map((x) => x.l.split(' HTTP ')[1]).join(', ')}`)
+    if (upgradesDuring.length) fails.push(`${upgradesDuring.length} websocket upgrade(s) during hold (client reconnected while asleep)`)
     if (navs - navsBefore) fails.push(`${navs - navsBefore} navigation(s) during hold`)
     // ---- wake
     const navsAtWake = navs
