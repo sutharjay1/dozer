@@ -1,0 +1,26 @@
+# dozer
+
+> dozer wraps `next dev`. It holds a Next.js app's dev port and runs the real `next dev` on a hidden loopback port only while pages are being requested, stops the whole Next.js process tree after an idle period, and keeps at most a few dev servers awake across every repo and git worktree on the machine.
+
+It exists because each git worktree (one per AI coding agent session) runs its own `next dev`, and each one holds its memory even when nobody is looking at it: about 563 MiB for a one-page Next.js 16 test app, and 5.1-7.8 GB in Kortix's own measurement of their app on a 24 GB Mac. A sleeping app costs about 47 MiB (the dozer process); the shared coordinator about 45 MiB. The first request after sleep waits for `next dev` to answer: about 1 s on a small Next.js 16 app, 5.8 s on a 47-page Next.js 15 app with Turbopack.
+
+## Docs
+
+- [Introduction](https://dozer-docs.sutharjay3635.workers.dev/): the problem, what dozer does, measured costs, when it helps and when it doesn't
+- [Quick start](https://dozer-docs.sutharjay3635.workers.dev/quickstart): install status, `dozer init`, first run, watching it sleep and wake, `DOZER=0`
+- [Commands](https://dozer-docs.sutharjay3635.workers.dev/commands): `dozer next dev`, `dozer status [--json]`, `dozer sleep <name>|--all`, `dozer wake <name>`, `dozer init [--yes]`
+- [Configuration](https://dozer-docs.sutharjay3635.workers.dev/configuration): settings, defaults, the `dozer` key in package.json, `DOZER_*` environment variables, `~/.dozer/config.json`
+- [How it works](https://dozer-docs.sutharjay3635.workers.dev/how-it-works): the gate and hidden port, the websocket hold, the coordinator and its soft limit, the guard
+- [Limits and troubleshooting](https://dozer-docs.sutharjay3635.workers.dev/limits): polling tabs, `PORT` vs `DOZER_PUBLIC_PORT`, `maxAwake`, HTTPS, platforms
+
+## Optional
+
+- [Full text of every page](https://dozer-docs.sutharjay3635.workers.dev/llms-full.txt)
+
+## What dozer is not
+
+- Not a hosting service: it runs on your machine next to `next dev`.
+- Not a production server: it is for `next dev` only.
+- It does not make a running dev server smaller; while awake, Next.js uses what it uses.
+- Not for Windows: macOS and Linux only.
+- Not published to npm yet.

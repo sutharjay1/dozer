@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dozer-docs",
+  "compatibility_date": "2026-11-01",
+  // Static assets only; no Worker script.
+  "assets": {
+    "directory": "./dist",
+    // Blume writes <route>/index.html and links without a trailing slash.
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "404-page"
+  }
+}
