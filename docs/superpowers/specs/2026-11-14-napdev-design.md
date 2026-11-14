@@ -159,8 +159,15 @@ connection through.
 - While asleep, browser sockets stay open and silent, and new upgrade attempts
   are accepted and held. Neither wakes the app. This stops the client's
   reconnect counter and its page reload.
-- On wake, napdev closes the held sockets. Each client reconnects, sees a new
-  session id and reloads. That reload is correct: the server is new.
+- On wake, napdev sends each held socket one reload frame,
+  `{"action":"reloadPage","type":"reloadPage"}`, then closes it with code 1012.
+  The page reloads once and connects to the new server. That reload is correct:
+  the server is new. Next 15 clients read `action`, Next 16 clients read `type`,
+  and each ignores the other key. Closing alone is not enough: the Next 15 App
+  Router client never reconnects after a close (spike 1, `spikes/RESULTS.md`:
+  6/8 with close only, 8/8 with the reload frame).
+- Next 15 serves the dev socket at `/_next/webpack-hmr`, Next 16 at
+  `/_next/hmr`. napdev accepts every upgrade, so the path does not matter.
 
 ### Hidden port
 
